@@ -1,0 +1,14 @@
+site_name: ai-ped-red-team Docs
+site_url: https://example.com/ai-ped-red-team
+repo_url: https://github.com/softoboros/ai-ped-red-team
+nav:
+  - Home: docs/index.md
+  - Getting Started: docs/getting-started.md
+theme:
+  name: material
+  features:
+    - navigation.instant
+markdown_extensions:
+  - footnotes
+  - admonition
+  - codehilite

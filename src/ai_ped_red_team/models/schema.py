@@ -63,6 +63,24 @@ class AnalysisRecord(BaseModel):
     directive_ratio: float
     readability: Optional[float] = None
     sentiment: Optional[float] = None
+    toxicity: Optional[float] = None
+    severe_toxicity: Optional[float] = None
+    obscene: Optional[float] = None
+    threat: Optional[float] = None
+    insult: Optional[float] = None
+    identity_attack: Optional[float] = None
+    history_toxicity: Optional[float] = None
+    history_severe_toxicity: Optional[float] = None
+    history_obscene: Optional[float] = None
+    history_threat: Optional[float] = None
+    history_insult: Optional[float] = None
+    history_identity_attack: Optional[float] = None
+    toxicity_delta: Optional[float] = None
+    severe_toxicity_delta: Optional[float] = None
+    obscene_delta: Optional[float] = None
+    threat_delta: Optional[float] = None
+    insult_delta: Optional[float] = None
+    identity_attack_delta: Optional[float] = None
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Mapping
 
 from ..config import Settings, load_settings
 from ..models.schema import PromptVariant
@@ -24,6 +24,10 @@ class TesterAgent:
         *,
         config: Optional[RunExecutionConfig] = None,
         variants: Optional[Iterable[PromptVariant]] = None,
+        substitutions: Optional[Mapping[str, str]] = None,
+        history_prompts: Optional[list[str]] = None,
+        axes_labels: Optional[Mapping[str, str]] = None,
+        run_tag: Optional[str] = None,
     ) -> RunArtifacts:
         return run_variants(
             template_path,
@@ -31,6 +35,10 @@ class TesterAgent:
             config=config,
             settings=self.settings,
             variants=variants,
+            substitutions=substitutions,
+            history_prompts=history_prompts,
+            axes_labels=axes_labels,
+            run_tag=run_tag,
         )
 
 

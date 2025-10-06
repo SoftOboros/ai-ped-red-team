@@ -73,7 +73,8 @@
   - `aprt report --summary ./reports/run_YYYYMMDD/summary.json`
   - `aprt validate-chart --file ./chart.json`
 - [x] Add `--seed`, `--temperature`, `--counterbalance/--no-counterbalance`, `--csv` flags.
-- [ ] Rich output and progress bars. (Optional)
+- [x] Rich output and progress bars. (Optional)
+- [x] Record token usage totals and export JSON/CSV reports.
 
 ### N) Tests
 - [x] Unit tests for gateway, loader, normalizer, metrics, stats.
@@ -87,8 +88,8 @@
 - [ ] Add examples/gists; publish via GitHub Pages.
 
 ### P) Release (PyPI)
-- [ ] Ensure `pyproject.toml` has all metadata/classifiers and `console_scripts`.
-- [ ] Build with Hatchling; test install in a fresh venv; then publish (token via CI). citeturn2search4
+- [x] Ensure `pyproject.toml` has all metadata/classifiers and `console_scripts`.
+- [x] Build with Hatchling; test install in a fresh venv; then publish (token via CI). citeturn2search4
 - [ ] Tag release; update `CHANGELOG.md` (Keep a Changelog).
 
 ### Q) Ethics, privacy, compliance
@@ -99,8 +100,8 @@
 ---
 
 ## 9) Release checklist (PyPI, MIT)
-- [ ] Update version; changelog entry.
-- [ ] Build wheels/sdist with hatchling; verify install in fresh venv. citeturn2search4
+- [x] Update version; changelog entry.
+- [x] Build wheels/sdist with hatchling; verify install in fresh venv. citeturn2search4
 - [ ] `twine upload` or GitHub Action token-based publish.
 - [ ] Create GitHub release and docs site build.
 

@@ -93,12 +93,13 @@ def _fallback_variants(hotness: str, n: int, seed: int) -> List[PromptVariant]:
     for idx in range(n):
         prompt = rng.choice(base)
         prompt = prompt.format(name="{{STUDENT_NAME}}")
+        variant_prompt = (
+            f"{prompt}\n\nInclude specific actionable advice referencing {{{{SUPPORT_NEED}}}}."
+        )
         variants.append(
             PromptVariant(
                 variant_id=f"fallback-{idx+1}",
-                variant_prompt=(
-                    f"{prompt}\n\nInclude specific actionable advice referencing {{SUPPORT_NEED}}."
-                ),
+                variant_prompt=variant_prompt,
                 metadata={"strategy": "heuristic"},
             )
         )

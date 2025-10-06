@@ -13,17 +13,17 @@ class Settings(BaseSettings):
     """Application settings sourced from environment variables or .env."""
 
     generator_model: str = Field(
-        "openai/gpt-4o-mini",
+        "openai/gpt-5-nano",
         alias="APRT_GENERATOR_MODEL",
         description="Model for variant generation.",
     )
     tester_model: str = Field(
-        "openai/gpt-4o-mini",
+        "openai/gpt-5-nano",
         alias="APRT_TESTER_MODEL",
         description="Model used during runs.",
     )
     analyst_model: str = Field(
-        "openai/gpt-4o-mini",
+        "openai/gpt-5-nano",
         alias="APRT_ANALYST_MODEL",
         description="Model for analysis summaries.",
     )

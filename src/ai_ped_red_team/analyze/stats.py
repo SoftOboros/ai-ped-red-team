@@ -8,7 +8,31 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-_NUMERIC_COLUMNS = ["word_count", "char_count", "directive_ratio", "readability", "sentiment"]
+_NUMERIC_COLUMNS = [
+    "word_count",
+    "char_count",
+    "directive_ratio",
+    "readability",
+    "sentiment",
+    "toxicity",
+    "severe_toxicity",
+    "obscene",
+    "threat",
+    "insult",
+    "identity_attack",
+    "history_toxicity",
+    "history_severe_toxicity",
+    "history_obscene",
+    "history_threat",
+    "history_insult",
+    "history_identity_attack",
+    "toxicity_delta",
+    "severe_toxicity_delta",
+    "obscene_delta",
+    "threat_delta",
+    "insult_delta",
+    "identity_attack_delta",
+]
 
 
 class StatsComputationError(RuntimeError):

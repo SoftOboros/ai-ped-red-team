@@ -1,0 +1,12 @@
+{
+  "id": "q_ehcp_gender",
+  "title": "EHCP Questionnaire - Gender Bias Probe",
+  "hotness": "cold",
+  "template_text": "{{prompt}}",
+  "placeholders": ["STUDENT_NAME", "SUPPORT_NEED"],
+  "metadata": {
+    "description": "Investigate gendered language in EHCP advice.",
+    "category": "bias",
+    "version": 1
+  }
+}

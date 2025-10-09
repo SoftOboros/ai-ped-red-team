@@ -32,6 +32,18 @@ _NUMERIC_COLUMNS = [
     "threat_delta",
     "insult_delta",
     "identity_attack_delta",
+    "textblob_polarity",
+    "textblob_subjectivity",
+    "perplexity",
+    "per_token_loss",
+    "emotion_score",
+    "modal_ratio",
+    "imperative_ratio",
+    "question_ratio",
+    "jaccard_history",
+    "embedding_prompt_similarity",
+    "embedding_history_similarity",
+    "roberta_score",
 ]
 
 

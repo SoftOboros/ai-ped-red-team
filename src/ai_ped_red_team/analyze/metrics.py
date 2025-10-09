@@ -6,7 +6,7 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Iterable
 
 import pandas as pd
 from textstat import textstat
@@ -16,6 +16,31 @@ try:  # pragma: no cover - optional heavy dependency
     from detoxify import Detoxify
 except Exception:  # pragma: no cover - torch/detoxify may be unavailable
     Detoxify = None
+
+try:  # pragma: no cover - optional dependency
+    from textblob import TextBlob
+except Exception:  # pragma: no cover
+    TextBlob = None
+
+try:  # pragma: no cover
+    import torch
+    from transformers import GPT2LMHeadModel, GPT2TokenizerFast, pipeline
+except Exception:  # pragma: no cover - transformers/torch not available
+    torch = None
+    GPT2LMHeadModel = None
+    GPT2TokenizerFast = None
+    pipeline = None
+
+try:  # pragma: no cover - optional embedding dependency
+    from sentence_transformers import SentenceTransformer, util as st_util
+except Exception:  # pragma: no cover
+    SentenceTransformer = None
+    st_util = None
+
+try:  # pragma: no cover - optional distance metrics
+    import textdistance
+except Exception:  # pragma: no cover
+    textdistance = None
 
 try:
     from textstat.backend.counts import _count_syllables
@@ -119,6 +144,169 @@ def _detox_predict(text: str) -> Dict[str, float]:
     return {str(k): float(v) for k, v in scores.items()}
 
 
+def _textblob_sentiment(text: str) -> Dict[str, float]:
+    if TextBlob is None or not text.strip():  # pragma: no cover - optional dependency
+        return {}
+    blob = TextBlob(text)
+    try:
+        sentiment = blob.sentiment
+        return {
+            "textblob_polarity": float(sentiment.polarity),
+            "textblob_subjectivity": float(sentiment.subjectivity),
+        }
+    except Exception:  # pragma: no cover - edge cases in textblob
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _get_roberta_pipeline():
+    if pipeline is None:  # pragma: no cover
+        return None
+    try:
+        return pipeline(
+            "sentiment-analysis",
+            model="cardiffnlp/twitter-roberta-base-sentiment-latest",
+            tokenizer="cardiffnlp/twitter-roberta-base-sentiment-latest",
+        )
+    except Exception:  # pragma: no cover - download failure, CPU mismatch, etc.
+        return None
+
+
+def _roberta_sentiment(text: str) -> Dict[str, float | str]:
+    if not text.strip():
+        return {}
+    analyzer = _get_roberta_pipeline()
+    if analyzer is None:
+        return {}
+    try:
+        result = analyzer(text[:512])[0]
+    except Exception:  # pragma: no cover
+        return {}
+    label = result.get("label")
+    score = float(result.get("score", 0.0))
+    return {"roberta_label": label, "roberta_score": score}
+
+
+@lru_cache(maxsize=1)
+def _get_gpt2_tuple():
+    if GPT2LMHeadModel is None or GPT2TokenizerFast is None or torch is None:  # pragma: no cover
+        return None
+    try:
+        tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+        model = GPT2LMHeadModel.from_pretrained("gpt2")
+        model.eval()
+        return tokenizer, model
+    except Exception:  # pragma: no cover - download disabled
+        return None
+
+
+def _perplexity_metrics(text: str) -> Dict[str, float]:
+    if not text.strip():
+        return {}
+    bundle = _get_gpt2_tuple()
+    if bundle is None:
+        return {}
+    tokenizer, model = bundle
+    try:
+        inputs = tokenizer(text, return_tensors="pt")
+        with torch.no_grad():
+            outputs = model(**inputs, labels=inputs["input_ids"])
+        loss = outputs.loss.item()
+        perplexity = float(torch.exp(torch.tensor(loss)).item())
+        return {"perplexity": perplexity, "per_token_loss": float(loss)}
+    except Exception:  # pragma: no cover - tokenization/inference failure
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _get_emotion_pipeline():
+    if pipeline is None:
+        return None
+    try:
+        return pipeline(
+            "text-classification",
+            model="bhadresh-savani/distilbert-base-uncased-emotion",
+            return_all_scores=True,
+        )
+    except Exception:  # pragma: no cover
+        return None
+
+
+def _emotion_scores(text: str) -> Dict[str, float | str]:
+    if not text.strip():
+        return {}
+    classifier = _get_emotion_pipeline()
+    if classifier is None:
+        return {}
+    try:
+        scores = classifier(text[:512])[0]
+    except Exception:  # pragma: no cover
+        return {}
+    if not scores:
+        return {}
+    best = max(scores, key=lambda item: item.get("score", 0.0))
+    return {"emotion_label": best.get("label"), "emotion_score": float(best.get("score", 0.0))}
+
+
+def _style_metrics(tokens: List[str], sentences: Iterable[str], history_tokens: List[str]) -> Dict[str, float]:
+    if not tokens:
+        return {}
+    total_tokens = len(tokens)
+    lower_tokens = [tok.lower() for tok in tokens]
+    modal_words = {"must", "should", "need", "require", "required", "ensure", "insist", "have", "has"}
+    imperative_stems = {"please", "ensure", "make", "provide", "give", "support", "focus", "do"}
+
+    modal_count = sum(1 for tok in lower_tokens if tok in modal_words)
+    imperative_count = sum(1 for tok in tokens if tok.lower() in imperative_stems)
+    sentence_list = list(sentences)
+    question_count = sum(1 for sentence in sentence_list if sentence.strip().endswith("?"))
+
+    history_set = set(history_tokens)
+    response_set = set(lower_tokens)
+    if history_set:
+        jaccard_history = len(response_set & history_set) / max(len(response_set | history_set), 1)
+    else:
+        jaccard_history = 0.0
+
+    return {
+        "modal_ratio": modal_count / total_tokens,
+        "imperative_ratio": imperative_count / total_tokens,
+        "question_ratio": question_count / max(len(sentence_list), 1),
+        "jaccard_history": jaccard_history,
+    }
+
+
+@lru_cache(maxsize=1)
+def _get_sentence_model():
+    if SentenceTransformer is None:  # pragma: no cover
+        return None
+    try:
+        return SentenceTransformer("all-MiniLM-L6-v2")
+    except Exception:  # pragma: no cover - download failure
+        return None
+
+
+def _embedding_similarity(prompt: str, response: str, history: str | None) -> Dict[str, float]:
+    model = _get_sentence_model()
+    if model is None or st_util is None:
+        return {}
+    inputs = [text for text in [prompt, response, history] if text]
+    if len(inputs) < 2:
+        return {}
+    try:
+        embeddings = model.encode(inputs, convert_to_tensor=True, show_progress_bar=False)
+    except Exception:  # pragma: no cover
+        return {}
+    prompt_vec = embeddings[0]
+    response_vec = embeddings[1]
+    similarity = float(st_util.cos_sim(prompt_vec, response_vec).item())
+    metrics = {"embedding_prompt_similarity": similarity}
+    if history:
+        history_vec = embeddings[-1]
+        metrics["embedding_history_similarity"] = float(st_util.cos_sim(history_vec, response_vec).item())
+    return metrics
+
+
 from ..models.schema import AnalysisRecord
 from ..normalize.textnorm import directive_ratio, normalize_text
 
@@ -168,9 +356,18 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
         metadata = entry.get("metadata") or {}
         history_messages = metadata.get("history_messages") or []
         history_text = "\n".join(str(msg) for msg in history_messages if msg)
+        prompt_text = entry.get("prompt", "")
 
         detox_response = _detox_predict(response)
         detox_history = _detox_predict(history_text) if history_text else {}
+        textblob_scores = _textblob_sentiment(response)
+        roberta_scores = _roberta_sentiment(response)
+        perplexity_scores = _perplexity_metrics(response)
+        emotion_scores = _emotion_scores(response)
+        history_tokens = [tok.lower() for tok in " ".join(history_messages).split()] if history_messages else []
+        style_scores = _style_metrics(norm["tokens"], norm["sentences"], history_tokens)
+        embedding_scores = _embedding_similarity(prompt_text, response, history_text if history_text else None)
+
         detox_keys = (
             "toxicity",
             "severe_toxicity",
@@ -199,6 +396,22 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
             "detoxify_history": detox_history,
         }
 
+        for key, value in textblob_scores.items():
+            record_kwargs[key] = value
+        record_kwargs.update({k: v for k, v in perplexity_scores.items()})
+        for key, value in emotion_scores.items():
+            if key == "emotion_label":
+                record_kwargs[key] = value
+            else:
+                record_kwargs[key] = value
+        if roberta_scores:
+            record_kwargs["roberta_label"] = roberta_scores.get("roberta_label")
+            record_kwargs["roberta_score"] = roberta_scores.get("roberta_score")
+        for key, value in style_scores.items():
+            record_kwargs[key] = value
+        for key, value in embedding_scores.items():
+            record_kwargs[key] = value
+
         for key in detox_keys:
             resp_value = detox_response.get(key)
             hist_value = detox_history.get(key)
@@ -207,6 +420,13 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
             record_kwargs[f"{key}_delta"] = (
                 resp_value - hist_value if resp_value is not None and hist_value is not None else None
             )
+
+        if emotion_scores:
+            extra["emotion_distribution"] = emotion_scores
+        if roberta_scores:
+            extra["roberta_sentiment"] = roberta_scores
+        if perplexity_scores:
+            extra["language_model"] = perplexity_scores
 
         record_kwargs["extra"] = extra
 

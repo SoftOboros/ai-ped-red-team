@@ -81,6 +81,20 @@ class AnalysisRecord(BaseModel):
     threat_delta: Optional[float] = None
     insult_delta: Optional[float] = None
     identity_attack_delta: Optional[float] = None
+    textblob_polarity: Optional[float] = None
+    textblob_subjectivity: Optional[float] = None
+    roberta_label: Optional[str] = None
+    roberta_score: Optional[float] = None
+    perplexity: Optional[float] = None
+    per_token_loss: Optional[float] = None
+    emotion_label: Optional[str] = None
+    emotion_score: Optional[float] = None
+    modal_ratio: Optional[float] = None
+    imperative_ratio: Optional[float] = None
+    question_ratio: Optional[float] = None
+    jaccard_history: Optional[float] = None
+    embedding_prompt_similarity: Optional[float] = None
+    embedding_history_similarity: Optional[float] = None
     extra: Dict[str, Any] = Field(default_factory=dict)
 
 

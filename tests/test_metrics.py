@@ -50,6 +50,13 @@ def test_compute_metrics_offline_nltk(monkeypatch, tmp_path):
     }
     monkeypatch.setattr(metrics, "_detox_predict", lambda text, s=detox_scores: s.copy())
 
+    monkeypatch.setattr(metrics, "_textblob_sentiment", lambda text: {"textblob_polarity": 0.1, "textblob_subjectivity": 0.2})
+    monkeypatch.setattr(metrics, "_roberta_sentiment", lambda text: {"roberta_label": "positive", "roberta_score": 0.9})
+    monkeypatch.setattr(metrics, "_perplexity_metrics", lambda text: {"perplexity": 10.0, "per_token_loss": 2.3})
+    monkeypatch.setattr(metrics, "_emotion_scores", lambda text: {"emotion_label": "joy", "emotion_score": 0.75})
+    monkeypatch.setattr(metrics, "_style_metrics", lambda tokens, sentences, history_tokens: {"modal_ratio": 0.1, "imperative_ratio": 0.05, "question_ratio": 0.0, "jaccard_history": 0.0})
+    monkeypatch.setattr(metrics, "_embedding_similarity", lambda prompt, resp, hist: {"embedding_prompt_similarity": 0.8})
+
     df = compute_metrics(results)
     assert not df.empty
     assert not calls
@@ -79,6 +86,12 @@ def test_compute_metrics_uses_vader(monkeypatch, tmp_path):
         "identity_attack": 0.0,
     }
     monkeypatch.setattr(metrics, "_detox_predict", lambda text, s=detox_scores: s.copy())
+    monkeypatch.setattr(metrics, "_textblob_sentiment", lambda text: {"textblob_polarity": 0.2, "textblob_subjectivity": 0.4})
+    monkeypatch.setattr(metrics, "_roberta_sentiment", lambda text: {"roberta_label": "neutral", "roberta_score": 0.6})
+    monkeypatch.setattr(metrics, "_perplexity_metrics", lambda text: {"perplexity": 20.0, "per_token_loss": 3.0})
+    monkeypatch.setattr(metrics, "_emotion_scores", lambda text: {"emotion_label": "anger", "emotion_score": 0.5})
+    monkeypatch.setattr(metrics, "_style_metrics", lambda tokens, sentences, history_tokens: {"modal_ratio": 0.2, "imperative_ratio": 0.1, "question_ratio": 0.25, "jaccard_history": 0.3})
+    monkeypatch.setattr(metrics, "_embedding_similarity", lambda prompt, resp, hist: {"embedding_prompt_similarity": 0.75})
 
     df = compute_metrics(results)
     assert not df.empty
@@ -130,6 +143,12 @@ def test_compute_metrics_detox_history(monkeypatch, tmp_path):
         }
 
     monkeypatch.setattr(metrics, "_detox_predict", fake_detox)
+    monkeypatch.setattr(metrics, "_textblob_sentiment", lambda text: {})
+    monkeypatch.setattr(metrics, "_roberta_sentiment", lambda text: {})
+    monkeypatch.setattr(metrics, "_perplexity_metrics", lambda text: {})
+    monkeypatch.setattr(metrics, "_emotion_scores", lambda text: {})
+    monkeypatch.setattr(metrics, "_style_metrics", lambda tokens, sentences, history_tokens: {"modal_ratio": 0.0, "imperative_ratio": 0.0, "question_ratio": 0.0, "jaccard_history": 0.4})
+    monkeypatch.setattr(metrics, "_embedding_similarity", lambda prompt, resp, hist: {"embedding_history_similarity": 0.2})
 
     df = compute_metrics(results)
     assert pytest.approx(0.1) == df.iloc[0]["toxicity"]

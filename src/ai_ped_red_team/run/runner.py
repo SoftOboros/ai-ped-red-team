@@ -225,10 +225,25 @@ def run_variants(
                     "model": response.model,
                     **{k: v for k, v in response.metadata.items() if v is not None},
                 }
+                usage_payload = model_info.get("usage")
+                if usage_payload is not None and not isinstance(usage_payload, dict):
+                    if hasattr(usage_payload, "model_dump"):
+                        model_info["usage"] = usage_payload.model_dump()
+                    elif hasattr(usage_payload, "to_dict"):
+                        model_info["usage"] = usage_payload.to_dict()
+                    elif hasattr(usage_payload, "dict"):
+                        model_info["usage"] = usage_payload.dict()
+                    elif hasattr(usage_payload, "__dict__"):
+                        model_info["usage"] = dict(vars(usage_payload))
+                    else:
+                        model_info["usage"] = None
             except LLMCompletionError as exc:
-                response_text = f"ERROR: {exc}"
-                latency_ms = 0.0
-                model_info = {"model": model_name, "error": str(exc)}
+                detail = str(exc)
+                message = (
+                    "LLM request failed after retrying: "
+                    f"variant '{variant.variant_id}' / student '{profile['name']}' -- {detail}"
+                )
+                raise RunError(message) from exc
             completed_at = datetime.utcnow()
             result = RunResult(
                 variant_id=variant.variant_id,

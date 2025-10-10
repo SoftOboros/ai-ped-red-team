@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, Sequence
+from typing import Any, Dict, Optional, Tuple, Sequence, List
 
 from litellm import completion
 
@@ -46,7 +46,44 @@ _MODEL_EXCEPTION_TABLE: Tuple[ModelExceptionRule, ...] = (
         model_prefixes=("gpt-5",),
         force_params={"temperature": 1.0},
     ),
+    ModelExceptionRule(
+        vendor="gemini",
+        model_prefixes=(
+            "gemini-",
+            "learnlm-",
+            "gemma-",
+            "imagen-",
+            "embedding-",
+            "text-embedding-",
+        ),
+        drop_params=("seed",),
+    ),
+    ModelExceptionRule(
+        vendor="anthropic",
+        model_prefixes=("claude-", "claude2", "haiku-", "sonnet-"),
+        drop_params=("seed",),
+    ),
+    ModelExceptionRule(
+        vendor="cohere",
+        model_prefixes=("command-", "cohere-", "xlarge", "medium", "small", "embed-", "rerank-"),
+        drop_params=("seed",),
+    ),
 )
+
+_VENDOR_PREFIX_HINTS: Dict[str, Tuple[str, ...]] = {
+    "openai": ("gpt-", "o1-", "o3-", "text-", "whisper-", "chatgpt-"),
+    "anthropic": ("claude-", "haiku-", "sonnet-", "opus-"),
+    "mistral": ("mistral-", "mixtral-", "open-mixtral"),
+    "cohere": ("command-", "cohere-", "embed-", "rerank-"),
+    "gemini": (
+        "gemini-",
+        "learnlm-",
+        "gemma-",
+        "imagen-",
+        "embedding-",
+        "text-embedding-",
+    ),
+}
 
 _CREDENTIAL_FIELDS: Dict[str, Tuple[str, str]] = {
     "openai": ("openai_api_key", "OPENAI_API_KEY"),
@@ -66,6 +103,23 @@ def _split_model_name(model_name: str) -> Tuple[str, str]:
     return "", model_name
 
 
+def _infer_vendor_hint(model_name: str) -> Optional[str]:
+    for vendor, prefixes in _VENDOR_PREFIX_HINTS.items():
+        for prefix in prefixes:
+            if model_name.startswith(prefix):
+                return vendor
+    return None
+
+
+def _normalize_model_name(raw_name: str) -> str:
+    if "/" in raw_name or not raw_name:
+        return raw_name
+    vendor = _infer_vendor_hint(raw_name)
+    if vendor:
+        return f"{vendor}/{raw_name}"
+    return raw_name
+
+
 def _apply_model_overrides(model_name: str, call_kwargs: Dict[str, Any]) -> Dict[str, Any]:
     applied = {"forced": {}, "dropped": []}
     vendor, simple_name = _split_model_name(model_name)
@@ -81,6 +135,17 @@ def _apply_model_overrides(model_name: str, call_kwargs: Dict[str, Any]) -> Dict
                 call_kwargs.pop(key, None)
                 applied["dropped"].append(key)
     return applied
+
+
+def _massage_messages_for_vendor(vendor: str, messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    adjusted = [dict(item) for item in messages]
+    if vendor != "cohere" or len(adjusted) < 2:
+        return adjusted
+    final_role = (adjusted[-1].get("role") or "").lower()
+    prior_role = (adjusted[-2].get("role") or "").lower()
+    if final_role == "user" and prior_role == "user":
+        adjusted.insert(-1, {"role": "assistant", "content": " "})
+    return adjusted
 
 
 def _extract_text(payload: Dict[str, Any]) -> str:
@@ -104,7 +169,7 @@ def llm_complete(
     """Execute a completion request with retries and backoff."""
 
     cfg = settings or load_settings()
-    model_name = model or cfg.tester_model
+    model_name = _normalize_model_name(model or cfg.tester_model)
     vendor, _ = _split_model_name(model_name)
     cred = _CREDENTIAL_FIELDS.get(vendor)
     if cred:
@@ -123,7 +188,7 @@ def llm_complete(
         try:
             call_kwargs: Dict[str, Any] = {
                 "model": model_name,
-                "messages": list(messages)
+                "messages": _massage_messages_for_vendor(vendor, messages)
                 if messages is not None
                 else [{"role": "user", "content": prompt}],
                 "temperature": temperature,
@@ -131,6 +196,20 @@ def llm_complete(
             }
             if seed is not None:
                 call_kwargs["seed"] = seed
+            litellm_params = call_kwargs.get("litellm_params")
+            if isinstance(litellm_params, dict):
+                litellm_params.setdefault("drop_params", True)
+            else:
+                call_kwargs["litellm_params"] = {"drop_params": True}
+            if vendor:
+                litellm_params = call_kwargs["litellm_params"]
+                litellm_params["custom_llm_provider"] = vendor
+                if vendor == "mistral" and "api_base" not in litellm_params:
+                    litellm_params["api_base"] = "https://api.mistral.ai/v1"
+                call_kwargs.setdefault("custom_llm_provider", vendor)
+            if vendor == "cohere":
+                # Cohere chat defaults to force_single_step=True; disable unless explicitly requested.
+                call_kwargs.setdefault("force_single_step", False)
             override_info = _apply_model_overrides(model_name, call_kwargs)
             response = completion(**call_kwargs)
             latency_ms = (time.perf_counter() - start_time) * 1000
@@ -153,7 +232,10 @@ def llm_complete(
             time.sleep(delay)
             delay *= 2
 
-    raise LLMCompletionError(f"LLM completion failed after {attempts} attempts") from last_exc
+    detail = str(last_exc) if last_exc is not None else "unknown error"
+    raise LLMCompletionError(
+        f"LLM completion failed after {attempts} attempts; last error: {detail}"
+    ) from last_exc
 
 
 __all__ = ["LLMCompletionError", "LLMResult", "llm_complete"]

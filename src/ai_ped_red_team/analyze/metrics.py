@@ -165,7 +165,11 @@ def _roberta_sentiment(text: str) -> Dict[str, float | str]:
     if analyzer is None:
         return {}
     try:
-        result = analyzer(text[:512])[0]
+        result = analyzer(
+            text[:1024],
+            truncation=True,
+            top_k=None,
+        )[0]
     except Exception:  # pragma: no cover
         return {}
     label = result.get("label")
@@ -198,7 +202,12 @@ def _perplexity_metrics(text: str) -> Dict[str, float]:
         return {}
     tokenizer, model, torch = bundle
     try:
-        inputs = tokenizer(text, return_tensors="pt")
+        inputs = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=1024,
+        )
         with torch.no_grad():
             outputs = model(**inputs, labels=inputs["input_ids"])
         loss = outputs.loss.item()

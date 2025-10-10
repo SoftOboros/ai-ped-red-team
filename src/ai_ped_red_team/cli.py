@@ -21,9 +21,18 @@ from .axes.config import AxesConfigError, load_axes_config
 from .config import load_settings
 from .generate.variants import generate_variants
 from .models.statecheck import ChartEdge, ValidationReport, validate_chart
-from .run.runner import RunExecutionConfig, run_variants
+from .run.runner import RunArtifacts, RunError, RunExecutionConfig, run_variants
 
 app = typer.Typer(no_args_is_help=True, add_completion=False)
+
+_DEBUG_ENABLED = False
+_DEBUG_HINT = "Re-run with --debug or set LITELLM_LOG=debug to inspect LiteLLM request logs."
+
+
+def _print_run_error(exc: RunError) -> None:
+    console.print(f"[red]{exc}")
+    if not _DEBUG_ENABLED:
+        console.print(f"[yellow]{_DEBUG_HINT}")
 
 console = Console()
 progress_columns = (
@@ -57,9 +66,41 @@ def _vendor_status(settings) -> List[Tuple[str, str, bool]]:
     return [(vendor, env_var, bool(value)) for vendor, (env_var, value) in mapping.items()]
 
 
+def _configured_vendors(settings) -> List[str]:
+    return [vendor for vendor, _, present in _vendor_status(settings) if present]
+
+
+@app.callback(invoke_without_command=True)
+def main_callback(
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help="Enable LiteLLM debug logging for outbound requests.",
+    ),
+) -> None:
+    """Global CLI options."""
+
+    global _DEBUG_ENABLED
+    if debug and not _DEBUG_ENABLED:
+        try:  # pragma: no cover - optional dependency path
+            import litellm
+
+            litellm._turn_on_debug()
+            console.print("[yellow]LiteLLM debug logging enabled.")
+            _DEBUG_ENABLED = True
+        except Exception as exc:
+            console.print(f"[red]Failed to enable LiteLLM debug logging: {exc}")
+
+
 def _list_openai_models(settings, limit: int) -> List[str]:
     if not settings.openai_api_key:
-        raise typer.BadParameter("OPENAI_API_KEY is not set.")
+        configured = _configured_vendors(settings)
+        suffix = (
+            f"Configured vendors: {', '.join(configured)}"
+            if configured
+            else "No vendors configured."
+        )
+        raise typer.BadParameter(f"OPENAI_API_KEY is not set. {suffix}")
     try:
         from openai import OpenAI
     except Exception as exc:  # pragma: no cover
@@ -75,7 +116,13 @@ def _list_openai_models(settings, limit: int) -> List[str]:
 def _list_google_models(settings, limit: int) -> List[str]:
     api_key = getattr(settings, "google_api_key", None)
     if not api_key:
-        raise typer.BadParameter("GOOGLE_API_KEY is not set.")
+        configured = _configured_vendors(settings)
+        suffix = (
+            f"Configured vendors: {', '.join(configured)}"
+            if configured
+            else "No vendors configured."
+        )
+        raise typer.BadParameter(f"GOOGLE_API_KEY is not set. {suffix}")
     params = {"key": api_key, "pageSize": min(limit, 100)}
     try:
         response = httpx.get(
@@ -90,12 +137,120 @@ def _list_google_models(settings, limit: int) -> List[str]:
     return [item.get("name", "").split("/")[-1] for item in data.get("models", []) if item.get("name")][:limit]
 
 
+def _list_anthropic_models(settings, limit: int) -> List[str]:
+    api_key = settings.anthropic_api_key
+    if not api_key:
+        configured = _configured_vendors(settings)
+        suffix = (
+            f"Configured vendors: {', '.join(configured)}"
+            if configured
+            else "No vendors configured."
+        )
+        raise typer.BadParameter(f"ANTHROPIC_API_KEY is not set. {suffix}")
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    try:
+        response = httpx.get(
+            "https://api.anthropic.com/v1/models",
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise typer.BadParameter(f"Failed to list Anthropic models: {exc}") from exc
+    payload = response.json()
+    items = payload.get("data") or []
+    results = []
+    for item in items:
+        model_id = item.get("id") or item.get("model")
+        if model_id:
+            results.append(model_id)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _list_mistral_models(settings, limit: int) -> List[str]:
+    api_key = settings.mistral_api_key
+    if not api_key:
+        configured = _configured_vendors(settings)
+        suffix = (
+            f"Configured vendors: {', '.join(configured)}"
+            if configured
+            else "No vendors configured."
+        )
+        raise typer.BadParameter(f"MISTRAL_API_KEY is not set. {suffix}")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        response = httpx.get(
+            "https://api.mistral.ai/v1/models",
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise typer.BadParameter(f"Failed to list Mistral models: {exc}") from exc
+    payload = response.json()
+    items = payload.get("data") or payload.get("models") or []
+    results: List[str] = []
+    for item in items:
+        model_id = item.get("id") or item.get("name")
+        if model_id:
+            results.append(model_id)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def _list_cohere_models(settings, limit: int) -> List[str]:
+    api_key = settings.cohere_api_key
+    if not api_key:
+        configured = _configured_vendors(settings)
+        suffix = (
+            f"Configured vendors: {', '.join(configured)}"
+            if configured
+            else "No vendors configured."
+        )
+        raise typer.BadParameter(f"COHERE_API_KEY is not set. {suffix}")
+    headers = {"Authorization": f"Bearer {api_key}"}
+    try:
+        response = httpx.get(
+            "https://api.cohere.com/v1/models",
+            headers=headers,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise typer.BadParameter(f"Failed to list Cohere models: {exc}") from exc
+    payload = response.json()
+    items = payload.get("models") or payload.get("data") or []
+    results: List[str] = []
+    for item in items:
+        if isinstance(item, str):
+            results.append(item)
+        else:
+            model_id = item.get("id") or item.get("name")
+            if model_id:
+                results.append(model_id)
+        if len(results) >= limit:
+            break
+    return results
+
+
 def _list_vendor_models(vendor: str, settings, limit: int) -> List[str]:
     canonical = _VENDOR_ALIAS.get(vendor.lower(), vendor.lower())
     if canonical == "openai":
         return _list_openai_models(settings, limit)
     if canonical == "gemini":
         return _list_google_models(settings, limit)
+    if canonical == "anthropic":
+        return _list_anthropic_models(settings, limit)
+    if canonical == "mistral":
+        return _list_mistral_models(settings, limit)
+    if canonical == "cohere":
+        return _list_cohere_models(settings, limit)
     raise typer.BadParameter(f"Model listing not implemented for vendor '{vendor}'.")
 
 
@@ -250,17 +405,23 @@ def run(
                     progress.update(task_id, total=total)
                 progress.update(task_id, completed=completed, description=description)
 
-            artefacts = run_variants(
-                template,
-                ehcp,
-                config=config,
-                settings=settings,
-                progress_callback=_update_progress,
-                substitutions=substitutions,
-                history_prompts=history_prompts,
-                axes_labels=label_map,
-                run_tag=run_tag,
-            )
+            try:
+                artefacts = run_variants(
+                    template,
+                    ehcp,
+                    config=config,
+                    settings=settings,
+                    progress_callback=_update_progress,
+                    substitutions=substitutions,
+                    history_prompts=history_prompts,
+                    axes_labels=label_map,
+                    run_tag=run_tag,
+                )
+            except RunError as exc:
+                progress.update(task_id, completed=progress.tasks[task_id].completed, description="error")
+                _print_run_error(exc)
+                raise typer.Exit(code=1) from exc
+
             final_total = progress.tasks[task_id].total or progress.tasks[task_id].completed or 1
             progress.update(task_id, completed=final_total, description="Run complete")
         artefact_paths.append(artefacts)
@@ -312,6 +473,15 @@ def wizard() -> None:
         console.print(
             f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var})."
         )
+        configured = _configured_vendors(base_settings)
+        if configured:
+            console.print(
+                f"[yellow]Configured vendors: {', '.join(configured)}"
+            )
+        else:
+            console.print(
+                "[yellow]No providers currently have API keys configured."
+            )
         if not typer.confirm(
             f"Continue anyway with vendor '{vendor_lower}'?", default=False
         ):
@@ -354,6 +524,15 @@ def wizard() -> None:
             continue
         if not model_input:
             model_input = default_model
+        simple_model = model_input.split("/", 1)[-1] if "/" in model_input else model_input
+        if canonical_vendor == "cohere":
+            lower_name = simple_model.lower()
+            if lower_name.startswith("embed") or lower_name.startswith("rerank"):
+                console.print(
+                    "[yellow]Selected Cohere model appears to be embedding-only. "
+                    "Choose a generative model such as 'command-r-plus'."
+                )
+                continue
         break
 
     if "/" in model_input:
@@ -429,6 +608,40 @@ def wizard() -> None:
         ehcp_input = typer.prompt("EHCP directory", default=str(ehcp_dir))
         ehcp_dir = Path(ehcp_input).expanduser()
 
+    axes_runs: list[tuple[dict[str, "AxisOption"], dict[str, object]]] = [({}, {})]
+    axes_labels: list[dict[str, str]] = [{}]
+    axes_config_path: Path | None = None
+    default_axes_path = Path("examples/ehcp_variables.toml")
+    axes_default_str = str(default_axes_path) if default_axes_path.exists() else ""
+    axes_input = typer.prompt(
+        "Axes config (enter to skip)",
+        default=axes_default_str,
+    ).strip()
+    if axes_input:
+        candidate = Path(axes_input).expanduser()
+        while not candidate.exists():
+            console.print(f"[red]Axes config not found: {candidate}")
+            axes_input = typer.prompt("Axes config (enter to skip)", default="").strip()
+            if not axes_input:
+                candidate = None
+                break
+            candidate = Path(axes_input).expanduser()
+        if candidate:
+            try:
+                axes = load_axes_config(candidate)
+            except AxesConfigError as exc:
+                console.print(f"[yellow]Failed to load axes config: {exc}")
+                if not typer.confirm("Continue without axes config?", default=True):
+                    console.print("[yellow]Aborting wizard at user request.")
+                    raise typer.Exit(code=1)
+            else:
+                axes_config_path = candidate
+                axes_runs = []
+                axes_labels = []
+                for axis_mapping, values in axes.iter_combinations():
+                    axes_runs.append((dict(axis_mapping), dict(values)))
+                    axes_labels.append({axis: option.label for axis, option in axis_mapping.items()})
+
     hotness = typer.prompt("Variant hotness (cold/hot)", default="cold").strip().lower()
     while hotness not in {"cold", "hot"}:
         console.print("[red]Please choose 'cold' or 'hot'.")
@@ -494,71 +707,112 @@ def wizard() -> None:
         counterbalance=True,
         hotness=hotness,
     )
+    run_records: list[tuple[RunArtifacts, dict[str, str], str | None]] = []
 
-    with Progress(*progress_columns, console=console) as progress:
-        task_id = progress.add_task("Running variants", total=len(variants) * 2 or 1)
+    for (axis_mapping, value_map), label_map in zip(axes_runs, axes_labels):
+        substitutions = {
+            k: v
+            for k, v in value_map.items()
+            if isinstance(v, str) and not k.startswith("HISTORY_")
+        }
+        if "SUPPORT_NEED" not in substitutions and "SUPPORT_NEEDED" in substitutions:
+            substitutions["SUPPORT_NEED"] = substitutions["SUPPORT_NEEDED"]
+        history_prompts = None
+        history_raw = value_map.get("HISTORY_PROMPTS")
+        if isinstance(history_raw, list):
+            history_prompts = [str(item) for item in history_raw]
 
-        def _update_progress(completed: int, total: int, description: str) -> None:
-            if progress.tasks[task_id].total != total:
-                progress.update(task_id, total=total)
-            progress.update(task_id, completed=completed, description=description)
+        tag_parts = [f"{axis}-{option.label}" for axis, option in axis_mapping.items()]
+        run_tag = "-".join(tag_parts)
+        run_tag = re.sub(r"[^A-Za-z0-9_-]+", "_", run_tag).strip("_") or None
 
-        artefacts = run_variants(
-            template_path,
-            ehcp_dir,
-            config=config,
-            settings=settings,
-            variants=variants,
-            progress_callback=_update_progress,
-        )
-        final_total = progress.tasks[task_id].total or progress.tasks[task_id].completed or 1
-        progress.update(task_id, completed=final_total, description="Runs complete")
+        with Progress(*progress_columns, console=console) as progress:
+            title = run_tag or "baseline"
+            if axes_config_path and label_map:
+                pretty_axes = ", ".join(f"{axis}={label}" for axis, label in label_map.items())
+                title = f"{title} ({pretty_axes})"
+            task_id = progress.add_task(f"Running variants ({title})", total=len(variants) * 2 or 1)
 
-    console.print(f"[green]Results written to: {artefacts.results_path}")
-    console.print(f"[green]Tabular log: {artefacts.csv_path}")
-    console.print(f"[green]Token usage (JSON): {artefacts.token_report_path}")
-    console.print(f"[green]Token usage (CSV): {artefacts.token_report_csv}")
+            def _update_progress(completed: int, total: int, description: str) -> None:
+                if progress.tasks[task_id].total != total:
+                    progress.update(task_id, total=total)
+                progress.update(task_id, completed=completed, description=description)
 
-    token_summary = json.loads(artefacts.token_report_path.read_text())
-    totals = token_summary.get("totals", {})
-    if totals:
-        prompt_tokens = totals.get("prompt_tokens", 0)
-        completion_tokens = totals.get("completion_tokens", 0)
-        total_tokens = totals.get("total_tokens", 0)
-        invocation_count = totals.get("invocations", 0)
-        console.print("[cyan]Tokens summary:")
-        console.print(
-            f"[cyan]  prompt: {prompt_tokens} | completion: {completion_tokens}"
-        )
-        console.print(
-            f"[cyan]  total: {total_tokens} (calls: {invocation_count})"
-        )
+            try:
+                artefacts = run_variants(
+                    template_path,
+                    ehcp_dir,
+                    config=config,
+                    settings=settings,
+                    variants=variants,
+                    progress_callback=_update_progress,
+                    substitutions=substitutions or None,
+                    history_prompts=history_prompts,
+                    axes_labels=label_map,
+                    run_tag=run_tag,
+                )
+            except RunError as exc:
+                progress.update(task_id, completed=progress.tasks[task_id].completed, description="error")
+                _print_run_error(exc)
+                raise typer.Exit(code=1) from exc
 
-    with console.status("Analyzing results...", spinner="dots"):
-        metrics_frame = compute_metrics(artefacts.results_path)
-        summary = summarize_stats(metrics_frame)
-        summary_path = artefacts.results_path.with_suffix(".summary.json")
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        metrics_csv = artefacts.run_dir / "metrics.csv"
-        metrics_frame.to_csv(metrics_csv, index=False)
+            final_total = progress.tasks[task_id].total or progress.tasks[task_id].completed or 1
+            progress.update(task_id, completed=final_total, description="Runs complete")
 
-    console.print(f"[green]Metrics CSV: {metrics_csv}")
-    console.print(f"[green]Summary JSON: {summary_path}")
+        run_records.append((artefacts, label_map, run_tag))
 
-    if summary.get("metrics"):
-        summary_table = Table(title="Average Metrics")
-        summary_table.add_column("Metric", style="magenta")
-        summary_table.add_column("Value", justify="right")
-        for metric, value in summary["metrics"].items():
-            summary_table.add_row(metric, f"{value:.3f}")
-        console.print(summary_table)
+    for artefacts, label_map, run_tag in run_records:
+        if axes_config_path and label_map:
+            axis_descriptor = ", ".join(f"{axis}={label}" for axis, label in label_map.items())
+            console.rule(f"[bold green]Run artefacts ({axis_descriptor})")
+        console.print(f"[green]Results written to: {artefacts.results_path}")
+        console.print(f"[green]Tabular log: {artefacts.csv_path}")
+        console.print(f"[green]Token usage (JSON): {artefacts.token_report_path}")
+        console.print(f"[green]Token usage (CSV): {artefacts.token_report_csv}")
 
-    with console.status("Rendering report...", spinner="dots"):
-        report_paths = render_report(summary_path)
+        token_summary = json.loads(artefacts.token_report_path.read_text())
+        totals = token_summary.get("totals", {})
+        if totals:
+            prompt_tokens = totals.get("prompt_tokens", 0)
+            completion_tokens = totals.get("completion_tokens", 0)
+            total_tokens = totals.get("total_tokens", 0)
+            invocation_count = totals.get("invocations", 0)
+            console.print("[cyan]Tokens summary:")
+            console.print(
+                f"[cyan]  prompt: {prompt_tokens} | completion: {completion_tokens}"
+            )
+            console.print(
+                f"[cyan]  total: {total_tokens} (calls: {invocation_count})"
+            )
 
-    console.print("[cyan]Reports generated:")
-    for path in report_paths:
-        console.print(f"  - {path}")
+        with console.status("Analyzing results...", spinner="dots"):
+            metrics_frame = compute_metrics(artefacts.results_path)
+            summary = summarize_stats(metrics_frame)
+            summary_path = artefacts.results_path.with_suffix(".summary.json")
+            summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+            metrics_csv = artefacts.run_dir / "metrics.csv"
+            metrics_frame.to_csv(metrics_csv, index=False)
+
+        console.print(f"[green]Metrics CSV: {metrics_csv}")
+        console.print(f"[green]Summary JSON: {summary_path}")
+
+        if summary.get("metrics"):
+            title = "Average Metrics"
+            if label_map:
+                title = f"Average Metrics ({', '.join(f'{k}={v}' for k, v in label_map.items())})"
+            summary_table = Table(title=title)
+            summary_table.add_column("Metric", style="magenta")
+            summary_table.add_column("Value", justify="right")
+            for metric, value in summary["metrics"].items():
+                summary_table.add_row(metric, f"{value:.3f}")
+            console.print(summary_table)
+
+        with console.status("Rendering report...", spinner="dots"):
+            report_paths = render_report(summary_path)
+
+        console.print("[cyan]Reports generated:")
+        for path in report_paths:
+            console.print(f"  - {path}")
 
     console.rule("[bold green]Wizard complete")
 

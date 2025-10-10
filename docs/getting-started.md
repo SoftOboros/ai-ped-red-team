@@ -39,14 +39,11 @@ You will be prompted for:
 - Model vendor (default `openai`) and model name (default `gpt-5-nano`). The wizard combines them as `vendor/model` (e.g. `openai/gpt-5-nano`).
 - Questionnaire template path (defaults to the bundled EHCP example). If you pass a directory, it will list `.json` templates and let you pick one.
 - EHCP directory containing paired student profiles.
+- Optional axes config (defaults to `examples/ehcp_variables.toml` when present). Selecting it expands every persona/support/history combination defined in the TOML, injecting any scripted `HISTORY_PROMPTS` before the prompt under test.
 - Hot/cold variant style, number of variants, temperature, and seed.
 - Optional model override for the tester stage (pre-filled with your vendor/model choice).
 
-The wizard displays generated prompts, streams run progress with Rich, and writes
-results, metrics, token-usage reports (JSON + CSV), and Markdown/HTML reports.
-If you pass a directory for the template prompt, it will list all `.json` files
-so you can select one interactively, making it easy to browse your own library.
-Everything ends with a list of artefact paths you can inspect immediately.
+The wizard displays generated prompts, streams run progress with Rich, and writes results, metrics, token-usage reports (JSON + CSV), and Markdown/HTML reports. When you supply an axes config, the wizard repeats the run for each axis combination, tagging the timestamped report directories with the chosen labels so cross-condition comparisons stay organised. If you pass a directory for the template prompt, it will list all `.json` files so you can select one interactively, making it easy to browse your own library. Everything ends with a list of artefact paths you can inspect immediately.
 
 ## Understanding the generated files
 Each run creates a timestamped directory under `reports/`. Inside you'll see:
@@ -67,12 +64,14 @@ Each run creates a timestamped directory under `reports/`. Inside you'll see:
 - `results.csv` — the same data in tabular form.
 - `token_usage.json` / `token_usage.csv` — per-call token counts plus aggregate totals for
   quick cost accounting.
-- `metrics.csv` — the numeric features returned by `compute_metrics` (now including VADER sentiment, Detoxify toxicity probabilities, history deltas, readability, directive ratios, etc.).
+- `metrics.csv` — the numeric features returned by `compute_metrics` (VADER sentiment, Detoxify toxicity probabilities, history deltas, readability, directive ratios, embedding similarity, etc.).
 - `results.summary.json` — the stats output from `summarize_stats`.
 - `results.summary.report.md` / `.html` — rendered reports from `render_report`.
 
 Use these artefacts to audit prompts, review token budgets, or feed the data into
 external dashboards.
+
+Need to inspect the raw LiteLLM calls? Pass `--debug` to any CLI invocation (for example, `aprt --debug run …`). This toggles LiteLLM’s verbose logging and mirrors the banner recommendation printed in failure scenarios.
 
 ## Manual workflow
 Prefer to run each step yourself? Use the discrete commands:
@@ -146,10 +145,12 @@ Prefer to run each step yourself? Use the discrete commands:
    ]
    ```
 4. Run the CLI with the axes file to expand every combination:
-   ```bash
-   aprt run --template q.json --ehcp examples/EHCP-templates --axes-config examples/ehcp_variables.toml
-   ```
+  ```bash
+  aprt run --template q.json --ehcp examples/EHCP-templates --axes-config examples/ehcp_variables.toml
+  ```
 5. Inspect each timestamped report directory; the suffix encodes the axis labels so comparisons stay organised.
+
+Need a custom positive/negative lexicon? Set `APRT_SENTIMENT_LEXICON` to point at a JSON file, or drop `sentiment_words.json` into the working directory or `~/.ai_ped_red_team/`. The toolkit seeds the file with defaults on first run and will reuse any edits you make thereafter.
 
 ### Minimal (single-profile) setup
 If you only have one profile, you can still point `aprt run` at a directory of plain `.txt` files. The runner uses the file stem as `{{STUDENT_NAME}}` and the first sentence as `{{SUPPORT_NEED}}`. Set `--counterbalance false` to bypass the "two profiles" guard.

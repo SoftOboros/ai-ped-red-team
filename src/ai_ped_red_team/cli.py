@@ -6,12 +6,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
+import httpx
 
 from .analyze.metrics import compute_metrics
 from .analyze.report import render_report
@@ -32,6 +33,103 @@ progress_columns = (
     TextColumn("{task.completed}/{task.total}"),
     TimeElapsedColumn(),
 )
+
+
+def _vendor_status(settings) -> List[Tuple[str, str, bool]]:
+    mapping = {
+        "openai": ("OPENAI_API_KEY", settings.openai_api_key),
+        "google": ("GOOGLE_API_KEY", getattr(settings, "google_api_key", None)),
+        "anthropic": ("ANTHROPIC_API_KEY", settings.anthropic_api_key),
+        "openrouter": ("OPENROUTER_API_KEY", settings.openrouter_api_key),
+        "mistral": ("MISTRAL_API_KEY", settings.mistral_api_key),
+        "cohere": ("COHERE_API_KEY", settings.cohere_api_key),
+    }
+    return [(vendor, env_var, bool(value)) for vendor, (env_var, value) in mapping.items()]
+
+
+def _list_openai_models(settings, limit: int) -> List[str]:
+    if not settings.openai_api_key:
+        raise typer.BadParameter("OPENAI_API_KEY is not set.")
+    try:
+        from openai import OpenAI
+    except Exception as exc:  # pragma: no cover
+        raise typer.BadParameter(f"OpenAI SDK unavailable: {exc}") from exc
+    client = OpenAI(api_key=settings.openai_api_key)
+    try:
+        models = client.models.list()
+    except Exception as exc:
+        raise typer.BadParameter(f"Failed to list OpenAI models: {exc}") from exc
+    return [item.id for item in models.data][:limit]
+
+
+def _list_google_models(settings, limit: int) -> List[str]:
+    api_key = getattr(settings, "google_api_key", None)
+    if not api_key:
+        raise typer.BadParameter("GOOGLE_API_KEY is not set.")
+    params = {"key": api_key, "pageSize": min(limit, 100)}
+    try:
+        response = httpx.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params=params,
+            timeout=15,
+        )
+        response.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise typer.BadParameter(f"Failed to list Gemini models: {exc}") from exc
+    data = response.json()
+    return [item.get("name", "") for item in data.get("models", []) if item.get("name")][:limit]
+
+
+def _list_vendor_models(vendor: str, settings, limit: int) -> List[str]:
+    vendor = vendor.lower()
+    if vendor == "openai":
+        return _list_openai_models(settings, limit)
+    if vendor in {"google", "gemini"}:
+        return _list_google_models(settings, limit)
+    raise typer.BadParameter(f"Model listing not implemented for vendor '{vendor}'.")
+
+
+@app.command()
+def vendors() -> None:
+    """List supported vendors and credential status."""
+
+    settings = load_settings()
+    table = Table(title="Vendor credentials", show_lines=False)
+    table.add_column("Vendor", style="cyan")
+    table.add_column("Env Var", style="magenta")
+    table.add_column("Configured", style="green")
+    for vendor, env_var, present in _vendor_status(settings):
+        table.add_row(vendor, env_var, "yes" if present else "no")
+    console.print(table)
+
+
+@app.command()
+def models(
+    vendor: str = typer.Argument("*", help="Vendor name, or '*' to list supported vendors."),
+    limit: int = typer.Option(50, help="Maximum number of models to display."),
+) -> None:
+    """List models from a provider."""
+
+    settings = load_settings()
+    if vendor == "*":
+        console.print("Use `aprt models <vendor>` with one of:")
+        for vendor_name, _, present in _vendor_status(settings):
+            status = "configured" if present else "missing-key"
+            console.print(f" - {vendor_name} ({status})")
+        return
+
+    model_ids = _list_vendor_models(vendor, settings, limit)
+    if not model_ids:
+        console.print(f"No models returned for vendor '{vendor}'.")
+        return
+
+    table = Table(title=f"Models for {vendor}")
+    table.add_column("#", justify="right")
+    table.add_column("Model ID", overflow="fold")
+    for idx, model_id in enumerate(model_ids, start=1):
+        table.add_row(str(idx), model_id)
+    console.print(table)
+
 
 
 @app.command("gen-variants")

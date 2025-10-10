@@ -32,6 +32,11 @@ aprt run --template src/ai_ped_red_team/templates/examples/questionnaire/q_ehcp_
          --model openai/gpt-5-nano
 aprt analyze --results ./reports/latest/results.jsonl > summary.json
 aprt report --summary summary.json
+
+# Inspect configured providers and available models
+aprt vendors
+aprt models openai
+aprt models google
 ```
 
 Generated runs now include token accounting artefacts (`token_usage.json` and `token_usage.csv`) alongside results, making usage tracking easy for billing reviews.

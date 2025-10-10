@@ -3,6 +3,7 @@
 All notable changes will be documented in this file following [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
+- Added CLI commands `aprt vendors` and `aprt models` to inspect configured providers and discover available models (OpenAI/Gemini).
 - Added configurable axes runner with persona/support/history sweeps and templated EHCP inputs.
 - Introduced VADER + Detoxify sentiment/toxicity metrics, including history deltas for injected context.
 - Documented templated pipeline, history injection workflows, and token/axes usage in README and Getting Started guide.

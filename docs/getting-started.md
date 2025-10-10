@@ -97,6 +97,12 @@ Prefer to run each step yourself? Use the discrete commands:
    ```bash
    aprt analyze --results reports/<timestamp>/results.jsonl --csv metrics.csv
    ```
+
+   Discover configured providers and provider models:
+   ```bash
+   aprt vendors
+   aprt models openai
+   ```
 5. Render reports:
    ```bash
    aprt report --summary reports/<timestamp>/results.summary.json

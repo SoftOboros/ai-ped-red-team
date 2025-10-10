@@ -77,7 +77,7 @@ def _list_google_models(settings, limit: int) -> List[str]:
     except httpx.HTTPError as exc:
         raise typer.BadParameter(f"Failed to list Gemini models: {exc}") from exc
     data = response.json()
-    return [item.get("name", "") for item in data.get("models", []) if item.get("name")][:limit]
+    return [item.get("name", "").split("/")[-1] for item in data.get("models", []) if item.get("name")][:limit]
 
 
 def _list_vendor_models(vendor: str, settings, limit: int) -> List[str]:
@@ -292,8 +292,45 @@ def wizard() -> None:
     console.rule("[bold cyan]AI Ped Red Team Wizard")
     base_settings = load_settings()
 
-    vendor_input = typer.prompt("Model vendor", default="openai").strip()
-    model_input = typer.prompt("Model name", default="gpt-5-nano").strip()
+    vendor_input = typer.prompt("Model vendor", default="openai").strip() or "openai"
+
+    default_model = "gpt-5-nano" if vendor_input.lower() == "openai" else ""
+    vendor_models: List[str] = []
+    try:
+        vendor_models = _list_vendor_models(vendor_input, base_settings, limit=10)
+        if vendor_models:
+            default_model = vendor_models[0]
+    except typer.BadParameter as exc:
+        console.print(f"[yellow]{exc}. Using manual entry.")
+
+    if not default_model:
+        default_model = "gpt-5-nano" if vendor_input.lower() == "openai" else "gemini-pro"
+
+    while True:
+        model_input = typer.prompt(
+            "Model name (enter '*' to list available models)",
+            default=default_model,
+        ).strip()
+        if model_input == "*":
+            try:
+                vendor_models = _list_vendor_models(vendor_input, base_settings, limit=50)
+            except typer.BadParameter as exc:
+                console.print(f"[red]{exc}")
+                continue
+            if not vendor_models:
+                console.print("[yellow]No models available from this vendor.")
+                continue
+            table = Table(title=f"Models for {vendor_input}")
+            table.add_column("#", justify="right")
+            table.add_column("Model ID", overflow="fold")
+            for idx, model_id in enumerate(vendor_models, start=1):
+                table.add_row(str(idx), model_id)
+            console.print(table)
+            continue
+        if not model_input:
+            model_input = default_model
+        break
+
     if "/" in model_input:
         full_model = model_input
     elif vendor_input:

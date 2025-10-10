@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import re
 from functools import lru_cache
 from typing import Dict, List, Optional
 
-try:  # pragma: no cover - spaCy optional during tests
-    import spacy
-except ImportError:  # pragma: no cover
-    spacy = None
+_SPACY_MODULE = None
+_SPACY_FAILED = False
 
 _DIRECTIVE_WORDS = {"must", "should", "may", "require", "insist"}
 _CATEGORY_RULES = {
@@ -24,10 +24,21 @@ _PHONE_RE = re.compile(r'\b\d{3}[- )]?\d{3}[- ]?\d{4}\b')
 
 @lru_cache(maxsize=1)
 def _get_nlp() -> Optional["spacy.language.Language"]:
-    if spacy is None:
+    global _SPACY_MODULE, _SPACY_FAILED
+    if _SPACY_FAILED:
         return None
+    if _SPACY_MODULE is None:
+        spec = importlib.util.find_spec("spacy")
+        if spec is None:
+            _SPACY_FAILED = True
+            return None
+        try:
+            _SPACY_MODULE = importlib.import_module("spacy")
+        except Exception:
+            _SPACY_FAILED = True
+            return None
     try:
-        return spacy.load("en_core_web_sm")
+        return _SPACY_MODULE.load("en_core_web_sm")  # type: ignore[attr-defined]
     except Exception:  # pragma: no cover - model not installed
         return None
 

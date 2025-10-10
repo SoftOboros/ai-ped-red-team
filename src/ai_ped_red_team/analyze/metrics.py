@@ -6,41 +6,13 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Dict, List, Tuple, Iterable
+from typing import Dict, Iterable, List, Tuple
+import importlib
+import importlib.util
 
 import pandas as pd
 from textstat import textstat
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-
-try:  # pragma: no cover - optional heavy dependency
-    from detoxify import Detoxify
-except Exception:  # pragma: no cover - torch/detoxify may be unavailable
-    Detoxify = None
-
-try:  # pragma: no cover - optional dependency
-    from textblob import TextBlob
-except Exception:  # pragma: no cover
-    TextBlob = None
-
-try:  # pragma: no cover
-    import torch
-    from transformers import GPT2LMHeadModel, GPT2TokenizerFast, pipeline
-except Exception:  # pragma: no cover - transformers/torch not available
-    torch = None
-    GPT2LMHeadModel = None
-    GPT2TokenizerFast = None
-    pipeline = None
-
-try:  # pragma: no cover - optional embedding dependency
-    from sentence_transformers import SentenceTransformer, util as st_util
-except Exception:  # pragma: no cover
-    SentenceTransformer = None
-    st_util = None
-
-try:  # pragma: no cover - optional distance metrics
-    import textdistance
-except Exception:  # pragma: no cover
-    textdistance = None
 
 try:
     from textstat.backend.counts import _count_syllables
@@ -122,11 +94,13 @@ def _get_vader() -> SentimentIntensityAnalyzer:
 
 
 @lru_cache(maxsize=1)
-def _get_detoxify() -> Detoxify | None:
-    if Detoxify is None:  # pragma: no cover - optional dependency
+def _get_detoxify() -> object | None:
+    module = importlib.util.find_spec("detoxify")
+    if module is None:
         return None
+    detoxify = importlib.import_module("detoxify")
     try:
-        return Detoxify("original")
+        return detoxify.Detoxify("original")
     except Exception:  # pragma: no cover - model download/torch failure
         return None
 
@@ -145,8 +119,12 @@ def _detox_predict(text: str) -> Dict[str, float]:
 
 
 def _textblob_sentiment(text: str) -> Dict[str, float]:
-    if TextBlob is None or not text.strip():  # pragma: no cover - optional dependency
+    if not text.strip():  # pragma: no cover - optional dependency
         return {}
+    module = importlib.util.find_spec("textblob")
+    if module is None:
+        return {}
+    TextBlob = importlib.import_module("textblob").TextBlob  # type: ignore[attr-defined]
     blob = TextBlob(text)
     try:
         sentiment = blob.sentiment
@@ -160,10 +138,12 @@ def _textblob_sentiment(text: str) -> Dict[str, float]:
 
 @lru_cache(maxsize=1)
 def _get_roberta_pipeline():
-    if pipeline is None:  # pragma: no cover
+    spec = importlib.util.find_spec("transformers")
+    if spec is None:  # pragma: no cover
         return None
+    transformers = importlib.import_module("transformers")
     try:
-        return pipeline(
+        return transformers.pipeline(
             "sentiment-analysis",
             model="cardiffnlp/twitter-roberta-base-sentiment-latest",
             tokenizer="cardiffnlp/twitter-roberta-base-sentiment-latest",
@@ -189,13 +169,17 @@ def _roberta_sentiment(text: str) -> Dict[str, float | str]:
 
 @lru_cache(maxsize=1)
 def _get_gpt2_tuple():
-    if GPT2LMHeadModel is None or GPT2TokenizerFast is None or torch is None:  # pragma: no cover
+    transformers_spec = importlib.util.find_spec("transformers")
+    torch_spec = importlib.util.find_spec("torch")
+    if transformers_spec is None or torch_spec is None:  # pragma: no cover
         return None
+    transformers = importlib.import_module("transformers")
+    torch = importlib.import_module("torch")
     try:
-        tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
-        model = GPT2LMHeadModel.from_pretrained("gpt2")
+        tokenizer = transformers.GPT2TokenizerFast.from_pretrained("gpt2")
+        model = transformers.GPT2LMHeadModel.from_pretrained("gpt2")
         model.eval()
-        return tokenizer, model
+        return tokenizer, model, torch
     except Exception:  # pragma: no cover - download disabled
         return None
 
@@ -206,7 +190,7 @@ def _perplexity_metrics(text: str) -> Dict[str, float]:
     bundle = _get_gpt2_tuple()
     if bundle is None:
         return {}
-    tokenizer, model = bundle
+    tokenizer, model, torch = bundle
     try:
         inputs = tokenizer(text, return_tensors="pt")
         with torch.no_grad():
@@ -220,10 +204,12 @@ def _perplexity_metrics(text: str) -> Dict[str, float]:
 
 @lru_cache(maxsize=1)
 def _get_emotion_pipeline():
-    if pipeline is None:
+    spec = importlib.util.find_spec("transformers")
+    if spec is None:
         return None
+    transformers = importlib.import_module("transformers")
     try:
-        return pipeline(
+        return transformers.pipeline(
             "text-classification",
             model="bhadresh-savani/distilbert-base-uncased-emotion",
             return_all_scores=True,
@@ -278,18 +264,24 @@ def _style_metrics(tokens: List[str], sentences: Iterable[str], history_tokens: 
 
 @lru_cache(maxsize=1)
 def _get_sentence_model():
-    if SentenceTransformer is None:  # pragma: no cover
+    spec = importlib.util.find_spec("sentence_transformers")
+    if spec is None:  # pragma: no cover
         return None
+    module = importlib.import_module("sentence_transformers")
     try:
-        return SentenceTransformer("all-MiniLM-L6-v2")
+        return module.SentenceTransformer("all-MiniLM-L6-v2")
     except Exception:  # pragma: no cover - download failure
         return None
 
 
 def _embedding_similarity(prompt: str, response: str, history: str | None) -> Dict[str, float]:
     model = _get_sentence_model()
-    if model is None or st_util is None:
+    if model is None:
         return {}
+    util_module = importlib.util.find_spec("sentence_transformers.util")
+    if util_module is None:
+        return {}
+    st_util = importlib.import_module("sentence_transformers.util")
     inputs = [text for text in [prompt, response, history] if text]
     if len(inputs) < 2:
         return {}

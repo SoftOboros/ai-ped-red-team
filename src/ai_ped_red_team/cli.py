@@ -293,8 +293,16 @@ def wizard() -> None:
     base_settings = load_settings()
 
     vendor_input = typer.prompt("Model vendor", default="openai").strip() or "openai"
+    vendor_lower = vendor_input.lower()
 
-    default_model = "gpt-5-nano" if vendor_input.lower() == "openai" else ""
+    status_entries = {vendor: (env_var, present) for vendor, env_var, present in _vendor_status(base_settings)}
+    env_var, present = status_entries.get(vendor_lower, (None, True))
+    if not present and env_var:
+        console.print(
+            f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var}). You may see fallback prompts until credentials are provided."
+        )
+
+    default_model = "gpt-5-nano" if vendor_lower == "openai" else "gemini-pro"
     vendor_models: List[str] = []
     try:
         vendor_models = _list_vendor_models(vendor_input, base_settings, limit=10)
@@ -302,9 +310,10 @@ def wizard() -> None:
             default_model = vendor_models[0]
     except typer.BadParameter as exc:
         console.print(f"[yellow]{exc}. Using manual entry.")
+        vendor_models = []
 
     if not default_model:
-        default_model = "gpt-5-nano" if vendor_input.lower() == "openai" else "gemini-pro"
+        default_model = "gpt-5-nano" if vendor_lower == "openai" else "gemini-pro"
 
     while True:
         model_input = typer.prompt(
@@ -393,7 +402,9 @@ def wizard() -> None:
         template_input = template_default_str
     template_path = _prompt_template_path(Path(template_input).expanduser())
 
-    default_ehcp_dir = Path("src/ai_ped_red_team/templates/examples/ehcp_pair")
+    default_ehcp_dir = Path("examples/EHCP-templates")
+    if not default_ehcp_dir.exists():
+        default_ehcp_dir = Path("src/ai_ped_red_team/templates/examples/ehcp_pair")
     ehcp_default_str = str(default_ehcp_dir) if default_ehcp_dir.exists() else ""
     ehcp_input = typer.prompt("EHCP directory", default=ehcp_default_str)
     ehcp_dir = Path(ehcp_input).expanduser()

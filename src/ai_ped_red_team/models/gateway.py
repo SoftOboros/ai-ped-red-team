@@ -48,6 +48,15 @@ _MODEL_EXCEPTION_TABLE: Tuple[ModelExceptionRule, ...] = (
     ),
 )
 
+_CREDENTIAL_FIELDS: Dict[str, Tuple[str, str]] = {
+    "openai": ("openai_api_key", "OPENAI_API_KEY"),
+    "google": ("google_api_key", "GOOGLE_API_KEY"),
+    "anthropic": ("anthropic_api_key", "ANTHROPIC_API_KEY"),
+    "openrouter": ("openrouter_api_key", "OPENROUTER_API_KEY"),
+    "mistral": ("mistral_api_key", "MISTRAL_API_KEY"),
+    "cohere": ("cohere_api_key", "COHERE_API_KEY"),
+}
+
 
 def _split_model_name(model_name: str) -> Tuple[str, str]:
     if "/" in model_name:
@@ -95,6 +104,14 @@ def llm_complete(
 
     cfg = settings or load_settings()
     model_name = model or cfg.tester_model
+    vendor, _ = _split_model_name(model_name)
+    cred = _CREDENTIAL_FIELDS.get(vendor)
+    if cred:
+        attr, env_name = cred
+        if not getattr(cfg, attr, None):
+            raise LLMCompletionError(
+                f"Missing credentials for vendor '{vendor}'. Set {env_name} before continuing."
+            )
     delay = cfg.backoff_seconds
     attempts = cfg.max_retries + 1
 

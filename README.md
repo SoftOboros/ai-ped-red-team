@@ -3,7 +3,7 @@
 Template-driven pedagogy red-team toolkit for LLM bias studies (EHCP demo).
 
 ## Features
-- Vendor-agnostic model access (LiteLLM).
+- Vendor-agnostic model access (LiteLLM) with built-in support for OpenAI, Google Gemini, Anthropic, etc.
 - Controlled prompt variation (hot/cold) with fallback safety prompts.
 - Counterbalanced runs across matched EHCPs and template-driven persona swapping.
 - Configurable axes (gender/support/history) to exhaust combinations and inject biased dialogue history.
@@ -18,7 +18,8 @@ pip install -e ".[dev,docs]"
 pre-commit install
 
 # 2) Configure env (copy .env.example → .env; set provider keys)
-export OPENAI_API_KEY=...  # etc.
+export OPENAI_API_KEY=...
+export GOOGLE_API_KEY=...   # for Gemini (google/* models)
 
 # 3) Guided experience (recommended)
 aprt wizard

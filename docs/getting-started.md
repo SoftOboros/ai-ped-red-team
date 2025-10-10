@@ -2,7 +2,7 @@
 
 ## Prerequisites
 - Python 3.10 or newer
-- Provider API keys (OpenAI, Anthropic, etc.)
+- Provider API keys (OpenAI, Google Gemini, Anthropic, etc.)
 - Virtual environment tool (`python -m venv`, `uv`, or similar)
 
 ## Installation
@@ -18,6 +18,17 @@ pre-commit install
 - `examples/EHCP-original/` – raw EHCP excerpts (kept unchanged for provenance).
 - `examples/EHCP-templates/` – templated versions where names, pronouns, and support descriptors are expressed as placeholders (e.g., `{{STUDENT_NAME}}`, `{{PRONOUN_SUBJECT}}`, `{{SUPPORT_NEED}}`).
 - `examples/ehcp_variables.toml` – axis configuration describing persona, support, and history options that can be mixed-and-matched during runs.
+
+### Environment setup
+
+Copy `.env.example` to `.env` and provide whichever vendor keys you plan to use. For example:
+
+```bash
+export OPENAI_API_KEY=sk-...
+export GOOGLE_API_KEY=your-gemini-key  # enables google/gemini-* models via LiteLLM
+```
+
+The CLI treats the vendor/model pair you enter (e.g., `google/gemini-pro`, `openai/gpt-4o-mini`) as-is, so setting the corresponding key is sufficient.
 
 ## Guided CLI wizard
 The fastest path from template to report is the interactive wizard:

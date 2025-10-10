@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = Field(None, alias="OPENROUTER_API_KEY")
     mistral_api_key: Optional[str] = Field(None, alias="MISTRAL_API_KEY")
     cohere_api_key: Optional[str] = Field(None, alias="COHERE_API_KEY")
+    google_api_key: Optional[str] = Field(None, alias="GOOGLE_API_KEY")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
 

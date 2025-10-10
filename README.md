@@ -21,6 +21,8 @@ pre-commit install
 export OPENAI_API_KEY=...
 export GOOGLE_API_KEY=...   # for Gemini (google/* models)
 
+> Gemini setup tip: make sure the Google project tied to `GOOGLE_API_KEY` has the *Generative Language API* enabled and billing active. Without those, Google will return HTTP 403.
+
 # 3) Guided experience (recommended)
 aprt wizard
 

@@ -299,8 +299,13 @@ def wizard() -> None:
     env_var, present = status_entries.get(vendor_lower, (None, True))
     if not present and env_var:
         console.print(
-            f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var}). You may see fallback prompts until credentials are provided."
+            f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var})."
         )
+        if not typer.confirm(
+            f"Continue anyway with vendor '{vendor_lower}'?", default=False
+        ):
+            console.print("[yellow]Aborting wizard at user request.")
+            raise typer.Exit(code=1)
 
     default_model = "gpt-5-nano" if vendor_lower == "openai" else "gemini-pro"
     vendor_models: List[str] = []

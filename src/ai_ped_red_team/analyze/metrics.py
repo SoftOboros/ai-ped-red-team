@@ -66,10 +66,16 @@ def _candidate_sentiment_paths() -> Tuple[Path, ...]:
 @lru_cache(maxsize=1)
 def _ensure_sentiment_file() -> Path:
     paths = _candidate_sentiment_paths()
-    for candidate in paths:
-        if candidate.exists():
-            return candidate
-    target = paths[0] if os.environ.get(_SENTIMENT_ENV_VAR) else paths[-1]
+    env_path = os.environ.get(_SENTIMENT_ENV_VAR)
+    env_candidate = Path(env_path) if env_path else None
+    if env_candidate:
+        if env_candidate.exists():
+            return env_candidate
+    else:
+        for candidate in paths:
+            if candidate.exists():
+                return candidate
+    target = env_candidate if env_candidate is not None else paths[-1]
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(_DEFAULT_SENTIMENT, indent=2), encoding='utf-8')
     return target

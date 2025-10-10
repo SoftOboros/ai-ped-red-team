@@ -34,6 +34,16 @@ progress_columns = (
     TimeElapsedColumn(),
 )
 
+_VENDOR_ALIAS = {
+    "google": "gemini",
+    "gemini": "gemini",
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "mistral": "mistral",
+    "cohere": "cohere",
+    "openrouter": "openrouter",
+}
+
 
 def _vendor_status(settings) -> List[Tuple[str, str, bool]]:
     mapping = {
@@ -81,10 +91,10 @@ def _list_google_models(settings, limit: int) -> List[str]:
 
 
 def _list_vendor_models(vendor: str, settings, limit: int) -> List[str]:
-    vendor = vendor.lower()
-    if vendor == "openai":
+    canonical = _VENDOR_ALIAS.get(vendor.lower(), vendor.lower())
+    if canonical == "openai":
         return _list_openai_models(settings, limit)
-    if vendor in {"google", "gemini"}:
+    if canonical == "gemini":
         return _list_google_models(settings, limit)
     raise typer.BadParameter(f"Model listing not implemented for vendor '{vendor}'.")
 
@@ -294,9 +304,10 @@ def wizard() -> None:
 
     vendor_input = typer.prompt("Model vendor", default="openai").strip() or "openai"
     vendor_lower = vendor_input.lower()
+    canonical_vendor = _VENDOR_ALIAS.get(vendor_lower, vendor_lower)
 
     status_entries = {vendor: (env_var, present) for vendor, env_var, present in _vendor_status(base_settings)}
-    env_var, present = status_entries.get(vendor_lower, (None, True))
+    env_var, present = status_entries.get(vendor_lower, status_entries.get(canonical_vendor, (None, True)))
     if not present and env_var:
         console.print(
             f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var})."
@@ -307,10 +318,10 @@ def wizard() -> None:
             console.print("[yellow]Aborting wizard at user request.")
             raise typer.Exit(code=1)
 
-    default_model = "gpt-5-nano" if vendor_lower == "openai" else "gemini-pro"
+    default_model = "gpt-5-nano" if canonical_vendor == "openai" else "gemini-pro"
     vendor_models: List[str] = []
     try:
-        vendor_models = _list_vendor_models(vendor_input, base_settings, limit=10)
+        vendor_models = _list_vendor_models(canonical_vendor, base_settings, limit=10)
         if vendor_models:
             default_model = vendor_models[0]
     except typer.BadParameter as exc:
@@ -318,7 +329,7 @@ def wizard() -> None:
         vendor_models = []
 
     if not default_model:
-        default_model = "gpt-5-nano" if vendor_lower == "openai" else "gemini-pro"
+        default_model = "gpt-5-nano" if canonical_vendor == "openai" else "gemini-pro"
 
     while True:
         model_input = typer.prompt(
@@ -327,7 +338,7 @@ def wizard() -> None:
         ).strip()
         if model_input == "*":
             try:
-                vendor_models = _list_vendor_models(vendor_input, base_settings, limit=50)
+                vendor_models = _list_vendor_models(canonical_vendor, base_settings, limit=50)
             except typer.BadParameter as exc:
                 console.print(f"[red]{exc}")
                 continue
@@ -347,8 +358,8 @@ def wizard() -> None:
 
     if "/" in model_input:
         full_model = model_input
-    elif vendor_input:
-        full_model = f"{vendor_input}/{model_input}"
+    elif canonical_vendor:
+        full_model = f"{canonical_vendor}/{model_input}"
     else:
         full_model = model_input
 

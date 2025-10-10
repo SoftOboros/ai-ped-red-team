@@ -50,6 +50,7 @@ _MODEL_EXCEPTION_TABLE: Tuple[ModelExceptionRule, ...] = (
 
 _CREDENTIAL_FIELDS: Dict[str, Tuple[str, str]] = {
     "openai": ("openai_api_key", "OPENAI_API_KEY"),
+    "gemini": ("google_api_key", "GOOGLE_API_KEY"),
     "google": ("google_api_key", "GOOGLE_API_KEY"),
     "anthropic": ("anthropic_api_key", "ANTHROPIC_API_KEY"),
     "openrouter": ("openrouter_api_key", "OPENROUTER_API_KEY"),

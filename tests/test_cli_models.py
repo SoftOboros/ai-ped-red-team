@@ -34,7 +34,11 @@ def test_models_wildcard(monkeypatch):
 def test_models_specific(monkeypatch):
     runner = CliRunner()
     monkeypatch.setattr(cli, "load_settings", lambda: DummySettings())
-    monkeypatch.setattr(cli, "_list_vendor_models", lambda vendor, settings, limit: ["model-a", "model-b"])
+
+    def _stub_models(vendor, settings, limit):
+        return ["model-a", "model-b"]
+
+    monkeypatch.setattr(cli, "_list_vendor_models", _stub_models)
 
     result = runner.invoke(cli.app, ["models", "openai"])
     assert result.exit_code == 0

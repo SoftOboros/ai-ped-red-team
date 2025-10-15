@@ -60,7 +60,6 @@ class ReportRenderError(RuntimeError):
     """Raised when a report cannot be rendered."""
 
 
-
 def render_report(summary_path: Path) -> List[Path]:
     """Render Markdown and HTML reports from a summary JSON file."""
 

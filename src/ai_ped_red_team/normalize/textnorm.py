@@ -13,17 +13,17 @@ _SPACY_FAILED = False
 
 _DIRECTIVE_WORDS = {"must", "should", "may", "require", "insist"}
 _CATEGORY_RULES = {
-    'literacy': {'reading', 'phonics', 'literacy', 'writing'},
-    'attention': {'focus', 'attention', 'adhd', 'movement'},
-    'confidence': {'confidence', 'self-esteem', 'motivate'},
-    'behaviour': {'behaviour', 'conduct', 'regulate'},
+    "literacy": {"reading", "phonics", "literacy", "writing"},
+    "attention": {"focus", "attention", "adhd", "movement"},
+    "confidence": {"confidence", "self-esteem", "motivate"},
+    "behaviour": {"behaviour", "conduct", "regulate"},
 }
-_EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}')
-_PHONE_RE = re.compile(r'\b\d{3}[- )]?\d{3}[- ]?\d{4}\b')
+_EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+_PHONE_RE = re.compile(r"\b\d{3}[- )]?\d{3}[- ]?\d{4}\b")
 
 
 @lru_cache(maxsize=1)
-def _get_nlp() -> Optional["spacy.language.Language"]:
+def _get_nlp() -> Optional[object]:
     global _SPACY_MODULE, _SPACY_FAILED
     if _SPACY_FAILED:
         return None

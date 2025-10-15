@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional, Mapping
+from typing import Iterable, Mapping, Optional
 
 from ..config import Settings, load_settings
 from ..models.schema import PromptVariant

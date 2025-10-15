@@ -65,9 +65,7 @@ def _parse_variants(payload: str) -> List[PromptVariant]:
     variants: List[PromptVariant] = []
     for idx, item in enumerate(data, start=1):
         if isinstance(item, str):
-            variants.append(
-                PromptVariant(variant_id=f"variant-{idx}", variant_prompt=item.strip())
-            )
+            variants.append(PromptVariant(variant_id=f"variant-{idx}", variant_prompt=item.strip()))
         elif isinstance(item, dict):
             prompt = item.get("prompt") or item.get("variant") or item.get("text")
             if prompt:

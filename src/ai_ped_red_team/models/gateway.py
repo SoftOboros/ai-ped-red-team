@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple, Sequence, List
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from litellm import completion
 
@@ -137,7 +137,9 @@ def _apply_model_overrides(model_name: str, call_kwargs: Dict[str, Any]) -> Dict
     return applied
 
 
-def _massage_messages_for_vendor(vendor: str, messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _massage_messages_for_vendor(
+    vendor: str, messages: Sequence[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
     adjusted = [dict(item) for item in messages]
     if vendor != "cohere" or len(adjusted) < 2:
         return adjusted
@@ -188,9 +190,11 @@ def llm_complete(
         try:
             call_kwargs: Dict[str, Any] = {
                 "model": model_name,
-                "messages": _massage_messages_for_vendor(vendor, messages)
-                if messages is not None
-                else [{"role": "user", "content": prompt}],
+                "messages": (
+                    _massage_messages_for_vendor(vendor, messages)
+                    if messages is not None
+                    else [{"role": "user", "content": prompt}]
+                ),
                 "temperature": temperature,
                 "timeout": timeout or cfg.request_timeout,
             }
@@ -208,7 +212,8 @@ def llm_complete(
                     litellm_params["api_base"] = "https://api.mistral.ai/v1"
                 call_kwargs.setdefault("custom_llm_provider", vendor)
             if vendor == "cohere":
-                # Cohere chat defaults to force_single_step=True; disable unless explicitly requested.
+                # Cohere chat defaults to force_single_step=True; disable unless
+                # explicitly requested.
                 call_kwargs.setdefault("force_single_step", False)
             override_info = _apply_model_overrides(model_name, call_kwargs)
             response = completion(**call_kwargs)

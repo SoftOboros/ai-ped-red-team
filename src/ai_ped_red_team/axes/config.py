@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Tuple
 
-import tomllib
+try:  # Python 3.11+
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 @dataclass(frozen=True)
@@ -35,7 +38,9 @@ class AxesConfig:
         axis_option_lists = [self.axes[name] for name in axis_names]
 
         for option_tuple in itertools.product(*axis_option_lists):
-            axis_mapping = {name: option for name, option in zip(axis_names, option_tuple)}
+            axis_mapping = {
+                name: option for name, option in zip(axis_names, option_tuple, strict=False)
+            }
             merged: Dict[str, Any] = {}
             for option in option_tuple:
                 for key, value in option.values.items():

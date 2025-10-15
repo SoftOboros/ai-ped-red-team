@@ -7,7 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, Tuple
 
-import tomllib
+try:  # Python 3.11+
+    import tomllib  # type: ignore[attr-defined]
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[no-redef]
 
 
 @dataclass(frozen=True)

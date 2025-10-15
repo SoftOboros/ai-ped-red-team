@@ -72,7 +72,7 @@ def _benjamini_hochberg(p_values: List[Tuple[str, str, float]]) -> Dict[Tuple[st
 
 def _cohens_d(a: np.ndarray, b: np.ndarray) -> float:
     if len(a) < 2 or len(b) < 2:
-        return float('nan')
+        return float("nan")
     mean_diff = a.mean() - b.mean()
     numerator = ((len(a) - 1) * a.var(ddof=1)) + ((len(b) - 1) * b.var(ddof=1))
     denominator = len(a) + len(b) - 2
@@ -89,7 +89,6 @@ def _cliffs_delta(a: np.ndarray, b: np.ndarray) -> float:
     if total == 0:
         return 0.0
     return float((greater - lesser) / total)
-
 
 
 def _global_summary(df: pd.DataFrame) -> Dict[str, float]:
@@ -141,10 +140,12 @@ def _two_sample_tests(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
                 "cohens_d": effect_d,
                 "cliffs_delta": effect_delta,
             }
-            raw_pvalues.extend([
-                (column, "ttest_p", t_pvalue),
-                (column, "mannwhitney_p", u_pvalue),
-            ])
+            raw_pvalues.extend(
+                [
+                    (column, "ttest_p", t_pvalue),
+                    (column, "mannwhitney_p", u_pvalue),
+                ]
+            )
         except ValueError:
             continue
     adjusted = _benjamini_hochberg(raw_pvalues)

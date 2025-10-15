@@ -35,7 +35,9 @@ class AxesConfig:
         axis_option_lists = [self.axes[name] for name in axis_names]
 
         for option_tuple in itertools.product(*axis_option_lists):
-            axis_mapping = {name: option for name, option in zip(axis_names, option_tuple)}
+            axis_mapping = {
+                name: option for name, option in zip(axis_names, option_tuple, strict=False)
+            }
             merged: Dict[str, Any] = {}
             for option in option_tuple:
                 for key, value in option.values.items():

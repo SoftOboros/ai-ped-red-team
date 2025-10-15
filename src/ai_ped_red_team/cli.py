@@ -6,18 +6,18 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
+import httpx
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-import httpx
 
 from .analyze.metrics import compute_metrics
 from .analyze.report import render_report
 from .analyze.stats import summarize_stats
-from .axes.config import AxesConfigError, load_axes_config
+from .axes.config import AxesConfigError, AxisOption, load_axes_config
 from .config import load_settings
 from .generate.variants import generate_variants
 from .models.statecheck import ChartEdge, ValidationReport, validate_chart
@@ -33,6 +33,7 @@ def _print_run_error(exc: RunError) -> None:
     console.print(f"[red]{exc}")
     if not _DEBUG_ENABLED:
         console.print(f"[yellow]{_DEBUG_HINT}")
+
 
 console = Console()
 progress_columns = (
@@ -134,7 +135,9 @@ def _list_google_models(settings, limit: int) -> List[str]:
     except httpx.HTTPError as exc:
         raise typer.BadParameter(f"Failed to list Gemini models: {exc}") from exc
     data = response.json()
-    return [item.get("name", "").split("/")[-1] for item in data.get("models", []) if item.get("name")][:limit]
+    return [
+        item.get("name", "").split("/")[-1] for item in data.get("models", []) if item.get("name")
+    ][:limit]
 
 
 def _list_anthropic_models(settings, limit: int) -> List[str]:
@@ -296,7 +299,6 @@ def models(
     console.print(table)
 
 
-
 @app.command("gen-variants")
 def gen_variants_cmd(
     template: Path = typer.Argument(..., help="Path to questionnaire template JSON."),
@@ -318,9 +320,7 @@ def gen_variants_cmd(
         )
     settings = load_settings()
     with console.status("Generating variants...", spinner="dots"):
-        variants = generate_variants(
-            template, hotness=hotness, n=n, seed=seed, settings=settings
-        )
+        variants = generate_variants(template, hotness=hotness, n=n, seed=seed, settings=settings)
     payload = [variant.model_dump() for variant in variants]
     if output:
         output.write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -378,7 +378,7 @@ def run(
             axes_labels.append({axis: option.label for axis, option in axis_mapping.items()})
 
     artefact_paths = []
-    for (axis_mapping, value_map), label_map in zip(axes_runs, axes_labels):
+    for (axis_mapping, value_map), label_map in zip(axes_runs, axes_labels, strict=False):
         history_raw = value_map.get("HISTORY_PROMPTS")
         history_prompts = None
         if isinstance(history_raw, list):
@@ -400,7 +400,9 @@ def run(
             title = run_tag or "baseline"
             task_id = progress.add_task(f"Preparing run ({title})", total=1)
 
-            def _update_progress(completed: int, total: int, description: str) -> None:
+            def _update_progress(
+                completed: int, total: int, description: str, task_id=task_id
+            ) -> None:
                 if progress.tasks[task_id].total != total:
                     progress.update(task_id, total=total)
                 progress.update(task_id, completed=completed, description=description)
@@ -418,7 +420,11 @@ def run(
                     run_tag=run_tag,
                 )
             except RunError as exc:
-                progress.update(task_id, completed=progress.tasks[task_id].completed, description="error")
+                progress.update(
+                    task_id,
+                    completed=progress.tasks[task_id].completed,
+                    description="error",
+                )
                 _print_run_error(exc)
                 raise typer.Exit(code=1) from exc
 
@@ -467,24 +473,22 @@ def wizard() -> None:
     vendor_lower = vendor_input.lower()
     canonical_vendor = _VENDOR_ALIAS.get(vendor_lower, vendor_lower)
 
-    status_entries = {vendor: (env_var, present) for vendor, env_var, present in _vendor_status(base_settings)}
-    env_var, present = status_entries.get(vendor_lower, status_entries.get(canonical_vendor, (None, True)))
+    status_entries = {
+        vendor: (env_var, present) for vendor, env_var, present in _vendor_status(base_settings)
+    }
+    env_var, present = status_entries.get(
+        vendor_lower, status_entries.get(canonical_vendor, (None, True))
+    )
     if not present and env_var:
         console.print(
             f"[yellow]Warning: {vendor_lower} credentials not configured (set {env_var})."
         )
         configured = _configured_vendors(base_settings)
         if configured:
-            console.print(
-                f"[yellow]Configured vendors: {', '.join(configured)}"
-            )
+            console.print(f"[yellow]Configured vendors: {', '.join(configured)}")
         else:
-            console.print(
-                "[yellow]No providers currently have API keys configured."
-            )
-        if not typer.confirm(
-            f"Continue anyway with vendor '{vendor_lower}'?", default=False
-        ):
+            console.print("[yellow]No providers currently have API keys configured.")
+        if not typer.confirm(f"Continue anyway with vendor '{vendor_lower}'?", default=False):
             console.print("[yellow]Aborting wizard at user request.")
             raise typer.Exit(code=1)
 
@@ -578,21 +582,15 @@ def wizard() -> None:
                         pass
                     console.print("[red]Invalid selection. Try again.")
                 else:
-                    console.print(
-                        f"[red]Directory {current} contains no JSON templates."
-                    )
+                    console.print(f"[red]Directory {current} contains no JSON templates.")
             else:
                 console.print(f"[red]Template not found: {current}")
-            template_input = typer.prompt(
-                "Template path", default=str(current)
-            ).strip()
+            template_input = typer.prompt("Template path", default=str(current)).strip()
             if not template_input:
                 template_input = str(current)
             current = Path(template_input).expanduser()
 
-    template_input = typer.prompt(
-        "Template path", default=template_default_str
-    ).strip()
+    template_input = typer.prompt("Template path", default=template_default_str).strip()
     if not template_input:
         template_input = template_default_str
     template_path = _prompt_template_path(Path(template_input).expanduser())
@@ -608,7 +606,7 @@ def wizard() -> None:
         ehcp_input = typer.prompt("EHCP directory", default=str(ehcp_dir))
         ehcp_dir = Path(ehcp_input).expanduser()
 
-    axes_runs: list[tuple[dict[str, "AxisOption"], dict[str, object]]] = [({}, {})]
+    axes_runs: list[tuple[dict[str, AxisOption], dict[str, object]]] = [({}, {})]
     axes_labels: list[dict[str, str]] = [{}]
     axes_config_path: Path | None = None
     default_axes_path = Path("examples/ehcp_variables.toml")
@@ -633,14 +631,16 @@ def wizard() -> None:
                 console.print(f"[yellow]Failed to load axes config: {exc}")
                 if not typer.confirm("Continue without axes config?", default=True):
                     console.print("[yellow]Aborting wizard at user request.")
-                    raise typer.Exit(code=1)
+                    raise typer.Exit(code=1) from None
             else:
                 axes_config_path = candidate
                 axes_runs = []
                 axes_labels = []
                 for axis_mapping, values in axes.iter_combinations():
                     axes_runs.append((dict(axis_mapping), dict(values)))
-                    axes_labels.append({axis: option.label for axis, option in axis_mapping.items()})
+                    axes_labels.append(
+                        {axis: option.label for axis, option in axis_mapping.items()}
+                    )
 
     hotness = typer.prompt("Variant hotness (cold/hot)", default="cold").strip().lower()
     while hotness not in {"cold", "hot"}:
@@ -709,7 +709,7 @@ def wizard() -> None:
     )
     run_records: list[tuple[RunArtifacts, dict[str, str], str | None]] = []
 
-    for (axis_mapping, value_map), label_map in zip(axes_runs, axes_labels):
+    for (axis_mapping, value_map), label_map in zip(axes_runs, axes_labels, strict=False):
         substitutions = {
             k: v
             for k, v in value_map.items()
@@ -733,7 +733,9 @@ def wizard() -> None:
                 title = f"{title} ({pretty_axes})"
             task_id = progress.add_task(f"Running variants ({title})", total=len(variants) * 2 or 1)
 
-            def _update_progress(completed: int, total: int, description: str) -> None:
+            def _update_progress(
+                completed: int, total: int, description: str, task_id=task_id
+            ) -> None:
                 if progress.tasks[task_id].total != total:
                     progress.update(task_id, total=total)
                 progress.update(task_id, completed=completed, description=description)
@@ -752,7 +754,11 @@ def wizard() -> None:
                     run_tag=run_tag,
                 )
             except RunError as exc:
-                progress.update(task_id, completed=progress.tasks[task_id].completed, description="error")
+                progress.update(
+                    task_id,
+                    completed=progress.tasks[task_id].completed,
+                    description="error",
+                )
                 _print_run_error(exc)
                 raise typer.Exit(code=1) from exc
 
@@ -761,7 +767,7 @@ def wizard() -> None:
 
         run_records.append((artefacts, label_map, run_tag))
 
-    for artefacts, label_map, run_tag in run_records:
+    for artefacts, label_map, _run_tag in run_records:
         if axes_config_path and label_map:
             axis_descriptor = ", ".join(f"{axis}={label}" for axis, label in label_map.items())
             console.rule(f"[bold green]Run artefacts ({axis_descriptor})")
@@ -778,12 +784,8 @@ def wizard() -> None:
             total_tokens = totals.get("total_tokens", 0)
             invocation_count = totals.get("invocations", 0)
             console.print("[cyan]Tokens summary:")
-            console.print(
-                f"[cyan]  prompt: {prompt_tokens} | completion: {completion_tokens}"
-            )
-            console.print(
-                f"[cyan]  total: {total_tokens} (calls: {invocation_count})"
-            )
+            console.print(f"[cyan]  prompt: {prompt_tokens} | completion: {completion_tokens}")
+            console.print(f"[cyan]  total: {total_tokens} (calls: {invocation_count})")
 
         with console.status("Analyzing results...", spinner="dots"):
             metrics_frame = compute_metrics(artefacts.results_path)

@@ -42,7 +42,10 @@ def test_run_variants_with_history(monkeypatch, temp_template: Path, temp_ehcp: 
     dummy = DummyLLM()
     monkeypatch.setattr("ai_ped_red_team.run.runner.llm_complete", dummy)
 
-    variant = PromptVariant(variant_id="v1", variant_prompt="Help {{STUDENT_NAME}} with {{SUPPORT_NEED}}")
+    variant = PromptVariant(
+        variant_id="v1",
+        variant_prompt="Help {{STUDENT_NAME}} with {{SUPPORT_NEED}}",
+    )
     history = [
         "user: Previous plan for {{STUDENT_NAME}}.",
         "assistant: Provided minimal guidance.",

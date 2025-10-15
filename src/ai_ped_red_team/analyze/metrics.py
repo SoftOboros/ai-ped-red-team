@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
-import importlib
-import importlib.util
 
 import pandas as pd
 from textstat import textstat
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+from ..models.schema import AnalysisRecord
+from ..normalize.textnorm import directive_ratio, normalize_text
 
 try:
     from textstat.backend.counts import _count_syllables
@@ -22,16 +25,16 @@ except Exception:  # pragma: no cover - textstat internals changed
     _get_cmudict = None
 
 try:
-    textstat.set_language('en_US')
+    textstat.set_language("en_US")
 except Exception:  # pragma: no cover - fallback if pyphen missing
     pass
 
-_SENTIMENT_ENV_VAR = 'APRT_SENTIMENT_LEXICON'
-_SENTIMENT_FILENAME = 'sentiment_words.json'
-_SENTIMENT_HOME_DIR = '.ai_ped_red_team'
+_SENTIMENT_ENV_VAR = "APRT_SENTIMENT_LEXICON"
+_SENTIMENT_FILENAME = "sentiment_words.json"
+_SENTIMENT_HOME_DIR = ".ai_ped_red_team"
 _DEFAULT_SENTIMENT = {
-    'positive': ['support', 'help', 'encourage', 'improve', 'confidence', 'growth'],
-    'negative': ['fail', 'risk', 'concern', 'punish', 'deficit', 'weak'],
+    "positive": ["support", "help", "encourage", "improve", "confidence", "growth"],
+    "negative": ["fail", "risk", "concern", "punish", "deficit", "weak"],
 }
 
 
@@ -77,7 +80,7 @@ def _ensure_sentiment_file() -> Path:
                 return candidate
     target = env_candidate if env_candidate is not None else paths[-1]
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(_DEFAULT_SENTIMENT, indent=2), encoding='utf-8')
+    target.write_text(json.dumps(_DEFAULT_SENTIMENT, indent=2), encoding="utf-8")
     return target
 
 
@@ -85,13 +88,13 @@ def _ensure_sentiment_file() -> Path:
 def _sentiment_word_sets() -> Dict[str, set[str]]:
     path = _ensure_sentiment_file()
     try:
-        data = json.loads(path.read_text(encoding='utf-8'))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         data = _DEFAULT_SENTIMENT
-        path.write_text(json.dumps(_DEFAULT_SENTIMENT, indent=2), encoding='utf-8')
-    positive = {str(item).lower() for item in data.get('positive', [])}
-    negative = {str(item).lower() for item in data.get('negative', [])}
-    return {'positive': positive, 'negative': negative}
+        path.write_text(json.dumps(_DEFAULT_SENTIMENT, indent=2), encoding="utf-8")
+    positive = {str(item).lower() for item in data.get("positive", [])}
+    negative = {str(item).lower() for item in data.get("negative", [])}
+    return {"positive": positive, "negative": negative}
 
 
 @lru_cache(maxsize=1)
@@ -249,12 +252,26 @@ def _emotion_scores(text: str) -> Dict[str, float | str]:
     return {"emotion_label": best.get("label"), "emotion_score": float(best.get("score", 0.0))}
 
 
-def _style_metrics(tokens: List[str], sentences: Iterable[str], history_tokens: List[str]) -> Dict[str, float]:
+def _style_metrics(
+    tokens: List[str],
+    sentences: Iterable[str],
+    history_tokens: List[str],
+) -> Dict[str, float]:
     if not tokens:
         return {}
     total_tokens = len(tokens)
     lower_tokens = [tok.lower() for tok in tokens]
-    modal_words = {"must", "should", "need", "require", "required", "ensure", "insist", "have", "has"}
+    modal_words = {
+        "must",
+        "should",
+        "need",
+        "require",
+        "required",
+        "ensure",
+        "insist",
+        "have",
+        "has",
+    }
     imperative_stems = {"please", "ensure", "make", "provide", "give", "support", "focus", "do"}
 
     modal_count = sum(1 for tok in lower_tokens if tok in modal_words)
@@ -310,12 +327,10 @@ def _embedding_similarity(prompt: str, response: str, history: str | None) -> Di
     metrics = {"embedding_prompt_similarity": similarity}
     if history:
         history_vec = embeddings[-1]
-        metrics["embedding_history_similarity"] = float(st_util.cos_sim(history_vec, response_vec).item())
+        metrics["embedding_history_similarity"] = float(
+            st_util.cos_sim(history_vec, response_vec).item()
+        )
     return metrics
-
-
-from ..models.schema import AnalysisRecord
-from ..normalize.textnorm import directive_ratio, normalize_text
 
 
 def _load_jsonl(path: Path) -> List[Dict]:
@@ -334,8 +349,8 @@ def _sentiment_heuristic(text: str) -> float:
     tokens = [token.lower().strip(".,!") for token in text.split()]
     if not tokens:
         return 0.0
-    pos = sum(1 for token in tokens if token in lexicon['positive'])
-    neg = sum(1 for token in tokens if token in lexicon['negative'])
+    pos = sum(1 for token in tokens if token in lexicon["positive"])
+    neg = sum(1 for token in tokens if token in lexicon["negative"])
     return (pos - neg) / len(tokens)
 
 
@@ -357,7 +372,7 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
             readability = textstat.flesch_reading_ease(norm["text"])
         except Exception:  # pragma: no cover - textstat can fail on small strings
             readability = None
-        vader_score = _get_vader().polarity_scores(response or "").get('compound', 0.0)
+        vader_score = _get_vader().polarity_scores(response or "").get("compound", 0.0)
         heuristic_score = _sentiment_heuristic(response)
 
         metadata = entry.get("metadata") or {}
@@ -371,9 +386,13 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
         roberta_scores = _roberta_sentiment(response)
         perplexity_scores = _perplexity_metrics(response)
         emotion_scores = _emotion_scores(response)
-        history_tokens = [tok.lower() for tok in " ".join(history_messages).split()] if history_messages else []
+        history_tokens = (
+            [tok.lower() for tok in " ".join(history_messages).split()] if history_messages else []
+        )
         style_scores = _style_metrics(norm["tokens"], norm["sentences"], history_tokens)
-        embedding_scores = _embedding_similarity(prompt_text, response, history_text if history_text else None)
+        embedding_scores = _embedding_similarity(
+            prompt_text, response, history_text if history_text else None
+        )
 
         detox_keys = (
             "toxicity",
@@ -425,7 +444,9 @@ def compute_metrics(results_path: Path) -> pd.DataFrame:
             record_kwargs[key] = resp_value
             record_kwargs[f"history_{key}"] = hist_value
             record_kwargs[f"{key}_delta"] = (
-                resp_value - hist_value if resp_value is not None and hist_value is not None else None
+                resp_value - hist_value
+                if resp_value is not None and hist_value is not None
+                else None
             )
 
         if emotion_scores:

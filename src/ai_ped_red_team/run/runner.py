@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Mapping
+from typing import Callable, Iterable, List, Mapping, Optional, Tuple
 
 import pandas as pd
 
@@ -75,13 +75,10 @@ def _read_ehcp_profiles(
             text = _apply_placeholders(text, subs)
         name = subs.get("STUDENT_NAME") or path.stem.replace("_", " ").title()
         summary = (
-            subs.get("SUPPORT_NEED")
-            or subs.get("SUPPORT_NEEDED")
-            or text.split(".")[0].strip()
+            subs.get("SUPPORT_NEED") or subs.get("SUPPORT_NEEDED") or text.split(".")[0].strip()
         )
         profiles.append({"name": name, "text": text, "summary": summary, "path": path})
     return profiles
-
 
 
 def _render_prompt(
@@ -101,10 +98,9 @@ def _render_prompt(
     base = _apply_placeholders(base, mapping)
     wrapper = _apply_placeholders(template.template_text, mapping)
     wrapper = wrapper.replace("{{prompt}}", base)
-    prompt_text = (
-        f"{wrapper}\n\nEHCP profile for {profile['name']}:\n{profile['text']}"
-    )
+    prompt_text = f"{wrapper}\n\nEHCP profile for {profile['name']}:\n{profile['text']}"
     return prompt_text.strip()
+
 
 def _build_history_messages(
     history_prompts: Iterable[str] | None,
@@ -137,12 +133,10 @@ def _variant_order(counterbalance: bool, index: int) -> List[int]:
     return [index % 2, (index + 1) % 2]
 
 
-
 def _results_to_frame(results: List[RunResult]) -> pd.DataFrame:
     if not results:
         return pd.DataFrame()
     return pd.DataFrame([r.model_dump() for r in results])
-
 
 
 def run_variants(
@@ -167,12 +161,16 @@ def run_variants(
     count = run_cfg.n_variants or cfg.default_variant_count
     mode = run_cfg.hotness
 
-    variant_list = list(variants) if variants else generate_variants(
-        template_path,
-        hotness=mode,
-        n=count,
-        seed=run_cfg.seed or 0,
-        settings=cfg,
+    variant_list = (
+        list(variants)
+        if variants
+        else generate_variants(
+            template_path,
+            hotness=mode,
+            n=count,
+            seed=run_cfg.seed or 0,
+            settings=cfg,
+        )
     )
 
     profiles = _read_ehcp_profiles(Path(ehcp_dir), substitutions=substitutions)
@@ -272,15 +270,9 @@ def run_variants(
             completion_tokens = 0
             total_tokens = 0
             if isinstance(usage, dict):
-                prompt_tokens = int(
-                    usage.get("prompt_tokens")
-                    or usage.get("promptTokens")
-                    or 0
-                )
+                prompt_tokens = int(usage.get("prompt_tokens") or usage.get("promptTokens") or 0)
                 completion_tokens = int(
-                    usage.get("completion_tokens")
-                    or usage.get("completionTokens")
-                    or 0
+                    usage.get("completion_tokens") or usage.get("completionTokens") or 0
                 )
                 total_tokens = int(
                     usage.get("total_tokens")
@@ -307,7 +299,7 @@ def run_variants(
                 progress_callback(
                     completed,
                     max(total_iterations, 1),
-                    f"{variant.variant_id} -> {profile['name']}"
+                    f"{variant.variant_id} -> {profile['name']}",
                 )
 
     with results_path.open("w", encoding="utf-8") as handle:
